@@ -8,6 +8,8 @@ Images are the main supported clipboard payload today. The bridge is file-based,
 
 Codex and Claude Code are both supported. Run either agent on the VPS inside `tmux`; ssh-bin-paste pairs your Mac with the SSH terminal you attach from.
 
+The macOS shortcut helper currently runs from small Swift scripts. If Swift is unavailable, macOS may ask you to install Command Line Tools; future releases should use prebuilt helpers.
+
 ## Quickstart
 
 ```sh
@@ -48,6 +50,7 @@ ssh-bin-paste config
 ## Requirements
 
 - macOS locally.
+- Swift or Apple Command Line Tools for the current macOS helper.
 - SSH access to the remote host.
 - `tmux` on the remote host.
 - Codex and/or Claude Code on the remote host.
