@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 
 use crate::agent::tmux::list_panes;
 use crate::config::{AppConfig, resolve_agent_command, save_config};
+use crate::remote_helper::run_remote_helper;
 use crate::ssh::{run_ssh, shell_quote, ssh_display_command, target_label};
 
 pub fn start_managed_agent(
@@ -37,6 +38,14 @@ pub fn start_managed_agent(
 
     started_config.target_pane = Some(pane.pane_id.clone());
     save_config(&started_config)?;
+    let _ = run_remote_helper(
+        &started_config,
+        &[
+            "remember-session".to_string(),
+            started_config.tmux_session.clone(),
+        ],
+        None,
+    );
     println!(
         "agent session ready: {}:{} target {}",
         target_label(config),

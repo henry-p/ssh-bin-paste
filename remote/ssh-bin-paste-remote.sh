@@ -6,6 +6,7 @@ DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/files}"
 STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
 DAEMON_PID_FILE="$STATE_DIR/cleanup-daemon.pid"
 DAEMON_LOG_FILE="$STATE_DIR/cleanup-daemon.log"
+LAST_SESSION_FILE="$STATE_DIR/last-session"
 
 usage() {
   cat >&2 <<'EOF'
@@ -14,6 +15,7 @@ usage: ssh-bin-paste-remote <command> [args]
 commands:
   version
   attach
+  remember-session <tmux-session>
   ensure-cache [cache-dir]
   panes
   inject <target-pane>
@@ -46,10 +48,24 @@ list_panes() {
   tmux list-panes -a -F '#{session_name}	#{window_index}.#{pane_index}	#{pane_id}	#{pane_pid}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true
 }
 
+remember_session() {
+  local session="${1:-}"
+  if [ -z "$session" ]; then
+    printf 'missing tmux session\n' >&2
+    return 2
+  fi
+  mkdir -p "$STATE_DIR"
+  printf '%s\n' "$session" > "$LAST_SESSION_FILE"
+}
+
 session_score() {
   local target="$1"
   local score=0
   local session command title haystack
+
+  if [ -f "$LAST_SESSION_FILE" ] && [ "$(cat "$LAST_SESSION_FILE" 2>/dev/null || true)" = "$target" ]; then
+    score=$((score + 100))
+  fi
 
   case "$target" in
     agent) score=$((score + 20)) ;;
@@ -231,6 +247,10 @@ case "${1:-}" in
     ;;
   attach)
     attach_tmux
+    ;;
+  remember-session)
+    shift
+    remember_session "${1:-}"
     ;;
   ensure-cache)
     shift

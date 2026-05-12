@@ -350,6 +350,7 @@ cmd_start() {
   pane="$(run_remote_helper panes | awk -F '\t' -v s="$TMUX_SESSION" '$1 == s {print $3; exit}')"
   TARGET_PANE="$pane"
   save_config
+  run_remote_helper remember-session "$TMUX_SESSION" >/dev/null 2>&1 || true
   printf 'agent session ready: %s:%s target %s\n' "${SSH_COMMAND:-$HOST}" "$TMUX_SESSION" "$pane"
   printf 'ssh into your VPS, then run: ssh-bin-paste attach\n'
 }
