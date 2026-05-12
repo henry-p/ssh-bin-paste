@@ -5,6 +5,7 @@ import { runDoctor } from "./doctor.js";
 import { installRemoteHelper } from "./remote-install.js";
 import { cleanupRemoteImages } from "./remote-cache.js";
 import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
+import { pasteClipboardImage } from "./paste.js";
 
 const program = new Command();
 
@@ -68,9 +69,10 @@ program
   .command("paste")
   .description("Paste the local clipboard image into a remote agent pane.")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (options: { host: string }) => {
-    await loadConfig({ host: options.host });
-    console.log(`paste placeholder for ${options.host}`);
+  .option("--target <pane>", "tmux target pane id")
+  .action(async (options: { host: string; target?: string }) => {
+    const config = await loadConfig({ host: options.host });
+    await pasteClipboardImage(config, options.target);
   });
 
 program
