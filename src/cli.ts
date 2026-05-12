@@ -6,6 +6,7 @@ import { installRemoteHelper } from "./remote-install.js";
 import { cleanupRemoteImages } from "./remote-cache.js";
 import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
 import { pasteClipboardImage } from "./paste.js";
+import { startManagedAgent } from "./start.js";
 
 const program = new Command();
 
@@ -40,9 +41,10 @@ program
   .description("Start an agent inside a managed tmux session.")
   .requiredOption("--agent <agent>", "Agent profile or command")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (options: { agent: string; host: string }) => {
-    await loadConfig({ host: options.host });
-    console.log(`start placeholder for ${options.agent} on ${options.host}`);
+  .option("--session <name>", "Managed tmux session name")
+  .action(async (options: { agent: string; host: string; session?: string }) => {
+    const config = await loadConfig({ host: options.host });
+    await startManagedAgent(config, options.agent, options.session);
   });
 
 program
