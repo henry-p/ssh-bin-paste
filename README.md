@@ -1,10 +1,10 @@
 # ssh-bin-paste
 
+Inspired by [@levelsio](https://x.com/levelsio)'s [remote-agent screenshot paste problem](https://x.com/levelsio/status/2053771680317636965):
+
 Paste images and other supported local clipboard payloads into remote Claude or Codex CLI sessions over SSH.
 Keep using your normal SSH terminal.
 The tool attaches to a `tmux` session running `claude` or `codex` and pairs that terminal with your host.
-
-Inspired by [@levelsio](https://x.com/levelsio)'s [remote-agent screenshot paste problem](https://x.com/levelsio/status/2053771680317636965): upload a local clipboard image over SSH and insert its remote file path into the active Claude or Codex session.
 
 ## Quickstart
 
