@@ -24,11 +24,7 @@ Or start Claude Code:
 ssh-bin-paste start claude
 ```
 
-Copy a supported file or image locally, then paste it into the remote agent:
-
-```sh
-ssh-bin-paste paste
-```
+Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut to send it to the remote agent.
 
 ## What setup does
 
