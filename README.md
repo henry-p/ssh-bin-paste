@@ -7,14 +7,12 @@ Paste local clipboard images into remote terminal agents over SSH.
 ## Quickstart
 
 ```sh
-git clone git@github.com:henry-p/ssh-bin-paste.git
-cd ssh-bin-paste
-npm install
-npm run build
-npm link
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | bash
+```
 
-ssh-bin-paste doctor --host vibeps
-ssh-bin-paste install-remote --host vibeps
+Then start an agent:
+
+```sh
 ssh-bin-paste start --host vibeps --agent codex
 
 # Copy an image on your Mac, then:
@@ -39,6 +37,21 @@ ssh -t vibeps 'tmux attach -t agent'
 - SSH access to the remote host.
 - `tmux` on the remote host.
 - An agent CLI on the remote host, such as Codex or Claude Code.
+
+The install script clones or updates the repo at `~/coding/private/ssh-bin-paste`, runs `npm install`, builds the CLI, links `ssh-bin-paste`, runs `doctor`, installs the remote helper, and starts the remote cleanup daemon.
+
+Install options:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+  SSH_BIN_PASTE_HOST=vibeps SSH_BIN_PASTE_AGENT=claude bash
+
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+  SSH_BIN_PASTE_DIR=~/tools/ssh-bin-paste bash
+
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+  SSH_BIN_PASTE_SKIP_REMOTE=1 bash
+```
 
 No remote server is installed. `install-remote` installs a tiny helper script that is invoked over SSH when needed.
 
