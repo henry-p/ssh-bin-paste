@@ -16,7 +16,6 @@ HOST="example-remote"
 SSH_COMMAND=""
 AGENT_CODEX_COMMAND="codex"
 AGENT_CLAUDE_COMMAND="claude"
-TMUX_SESSION="agent"
 REMOTE_CACHE_DIR="~/.cache/ssh-bin-paste/files"
 REMOTE_HELPER_PATH="~/.local/bin/ssh-bin-paste-remote"
 CLEANUP_ENABLED="1"
@@ -54,7 +53,6 @@ save_config() {
     write_config_value SSH_COMMAND "$SSH_COMMAND"
     write_config_value AGENT_CODEX_COMMAND "$AGENT_CODEX_COMMAND"
     write_config_value AGENT_CLAUDE_COMMAND "$AGENT_CLAUDE_COMMAND"
-    write_config_value TMUX_SESSION "$TMUX_SESSION"
     write_config_value REMOTE_CACHE_DIR "$REMOTE_CACHE_DIR"
     write_config_value REMOTE_HELPER_PATH "$REMOTE_HELPER_PATH"
     write_config_value CLEANUP_ENABLED "$CLEANUP_ENABLED"
@@ -85,20 +83,6 @@ prompt() {
   done
 }
 
-prompt_yes_no() {
-  local label="$1" default="$2" answer prompt_label
-  if [ "$default" = "1" ]; then prompt_label="Y/n"; else prompt_label="y/N"; fi
-  while true; do
-    printf '%s [%s]: ' "$label" "$prompt_label" >/dev/tty
-    IFS= read -r answer </dev/tty
-    case "${answer:-$default}" in
-      1|y|Y|yes|YES) return 0 ;;
-      0|n|N|no|NO) return 1 ;;
-      *) printf 'Please answer yes or no.\n' >/dev/tty ;;
-    esac
-  done
-}
-
 validate_host_alias() {
   case "$1" in ssh\ *) return 1 ;; esac
   [ "$(printf '%s' "$1" | wc -w | tr -d ' ')" = "1" ]
@@ -112,7 +96,7 @@ run_config_wizard() {
   load_config
   mkdir -p "$CONFIG_DIR"
   printf 'ssh-bin-paste config\n\n' >/dev/tty
-  printf 'Remote target:\n  1. SSH config host alias\n  2. Full SSH command\n' >/dev/tty
+  printf 'Remote target:\n  1. SSH config host alias (example: example-remote)\n  2. Full SSH command (example: ssh -i ~/.ssh/example_ed25519 user@203.0.113.10)\n' >/dev/tty
   local default_mode="1" mode
   [ -n "$SSH_COMMAND" ] && default_mode="2"
   while true; do
@@ -135,14 +119,13 @@ run_config_wizard() {
     done
   fi
 
-  AGENT_CODEX_COMMAND="$(prompt 'Codex command' "$AGENT_CODEX_COMMAND")"
-  AGENT_CLAUDE_COMMAND="$(prompt 'Claude Code command' "$AGENT_CLAUDE_COMMAND")"
-  TMUX_SESSION="$(prompt 'Managed tmux session' "$TMUX_SESSION")"
-  REMOTE_CACHE_DIR="$(prompt 'Remote file cache dir' "$REMOTE_CACHE_DIR")"
-  REMOTE_HELPER_PATH="$(prompt 'Remote helper path' "$REMOTE_HELPER_PATH")"
-  if prompt_yes_no 'Start remote cache cleanup worker' "$CLEANUP_ENABLED"; then CLEANUP_ENABLED="1"; else CLEANUP_ENABLED="0"; fi
-  CLEANUP_MAX_AGE_SECONDS="$(prompt 'Cleanup max age seconds' "$CLEANUP_MAX_AGE_SECONDS")"
-  CLEANUP_INTERVAL_SECONDS="$(prompt 'Cleanup interval seconds' "$CLEANUP_INTERVAL_SECONDS")"
+  AGENT_CODEX_COMMAND="codex"
+  AGENT_CLAUDE_COMMAND="claude"
+  REMOTE_CACHE_DIR="~/.cache/ssh-bin-paste/files"
+  REMOTE_HELPER_PATH="~/.local/bin/ssh-bin-paste-remote"
+  CLEANUP_ENABLED="1"
+  CLEANUP_MAX_AGE_SECONDS="86400"
+  CLEANUP_INTERVAL_SECONDS="300"
   save_config
   printf '\nwrote %s\n' "$CONFIG_FILE" >/dev/tty
 }
