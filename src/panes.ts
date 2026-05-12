@@ -64,7 +64,7 @@ export async function resolveTargetPane(config: AppConfig): Promise<string> {
   return choosePane(panes);
 }
 
-function parsePaneLine(line: string): TmuxPane {
+export function parsePaneLine(line: string): TmuxPane {
   const [sessionName = "", windowPane = "", paneId = "", panePidRaw = "", command = "", cwd = "", title = ""] = line.split("\t");
   const pane: Omit<TmuxPane, "score"> = {
     sessionName,
@@ -99,4 +99,3 @@ async function choosePane(panes: TmuxPane[]): Promise<string> {
     rl.close();
   }
 }
-
