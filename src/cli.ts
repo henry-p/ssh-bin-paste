@@ -7,6 +7,7 @@ import { cleanupRemoteImages } from "./remote-cache.js";
 import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
 import { pasteClipboardImage } from "./paste.js";
 import { startManagedAgent } from "./start.js";
+import { runDaemon } from "./daemon.js";
 
 const program = new Command();
 
@@ -90,8 +91,11 @@ program
 program
   .command("daemon")
   .description("Run the optional macOS hotkey daemon.")
-  .action(() => {
-    console.log("daemon placeholder");
+  .option("--host <host>", "SSH host alias", "vibeps")
+  .option("--hijack-paste", "Intercept normal paste in allowlisted terminal apps")
+  .action(async (options: { host: string; hijackPaste?: boolean }) => {
+    const config = await loadConfig({ host: options.host });
+    await runDaemon(config, { hijackPaste: options.hijackPaste ?? config.daemon.hijackPaste });
   });
 
 program.parse();
