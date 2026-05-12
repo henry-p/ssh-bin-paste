@@ -377,7 +377,7 @@ json_field() {
   sed -n "s/.*\"$field\":\"\([^\"]*\)\".*/\1/p" | sed 's#\\/#/#g; s#\\"#"#g; s#\\\\#\\#g'
 }
 
-internal_paste() {
+cmd_paste() {
   load_config
   parse_remote_opts "$@"
   load_pairing_target || {
@@ -453,7 +453,7 @@ main() {
   [ $# -gt 0 ] && shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
-    __paste) internal_paste "$@" ;;
+    paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;
     help|--help|-h|'') usage ;;
