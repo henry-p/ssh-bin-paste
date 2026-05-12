@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { loadConfig, resolveAgentCommand } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { installRemoteHelper } from "./remote-install.js";
+import { cleanupRemoteImages } from "./remote-cache.js";
 
 const program = new Command();
 
@@ -64,9 +65,10 @@ program
   .command("cleanup")
   .description("Remove old staged remote images.")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (options: { host: string }) => {
-    await loadConfig({ host: options.host });
-    console.log(`cleanup placeholder for ${options.host}`);
+  .option("--max-age-seconds <seconds>", "Delete images older than this many seconds", "86400")
+  .action(async (options: { host: string; maxAgeSeconds: string }) => {
+    const config = await loadConfig({ host: options.host });
+    await cleanupRemoteImages(config, Number.parseInt(options.maxAgeSeconds, 10));
   });
 
 program
