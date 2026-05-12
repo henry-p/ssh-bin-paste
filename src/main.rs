@@ -8,6 +8,7 @@ use ssh_bin_paste::config_command::run_config_command;
 use ssh_bin_paste::daemon::run_daemon;
 use ssh_bin_paste::doctor::run_doctor;
 use ssh_bin_paste::remote_install::{InstallRemoteOptions, install_remote_helper};
+use ssh_bin_paste::setup::run_setup_command;
 use ssh_bin_paste::transfer::cache::{cleanup_remote_files, remote_cleanup_daemon};
 
 #[derive(Debug, Parser)]
@@ -22,6 +23,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Setup,
     Config(ConfigArgs),
     Doctor(DoctorArgs),
     InstallRemote(InstallRemoteArgs),
@@ -85,8 +87,13 @@ struct InstallRemoteArgs {
 struct StartArgs {
     #[command(flatten)]
     remote: RemoteArgs,
-    #[arg(long, help = "Agent profile or command; defaults to the saved config")]
+    #[arg(help = "Agent profile or command; defaults to the saved config")]
     agent: Option<String>,
+    #[arg(
+        long = "agent",
+        help = "Agent profile or command; defaults to the saved config"
+    )]
+    agent_flag: Option<String>,
     #[arg(long, help = "Managed tmux session name")]
     session: Option<String>,
 }
@@ -146,6 +153,7 @@ fn main() {
 
 fn run() -> Result<()> {
     match Cli::parse().command {
+        Commands::Setup => run_setup_command(),
         Commands::Config(args) => run_config_command(args.path, args.print),
         Commands::Doctor(args) => {
             let config = args.remote.load_config()?;
@@ -174,7 +182,10 @@ fn run() -> Result<()> {
         }
         Commands::Start(args) => {
             let config = args.remote.load_config()?;
-            let agent = args.agent.unwrap_or_else(|| config.default_agent.clone());
+            let agent = args
+                .agent
+                .or(args.agent_flag)
+                .unwrap_or_else(|| config.default_agent.clone());
             start_managed_agent(&config, &agent, args.session.as_deref())
         }
         Commands::Panes(args) => {

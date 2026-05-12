@@ -131,26 +131,18 @@ if ! command -v ssh-bin-paste >/dev/null 2>&1; then
   log "add $BIN_DIR to PATH to run ssh-bin-paste without the full path"
 fi
 
-log "opening config wizard"
-"$BIN" config </dev/tty >/dev/tty
-
-if prompt_yes_no "Run doctor and install the remote helper now" "y"; then
-  REMOTE_LABEL="$(remote_label)"
-  log "running doctor for $REMOTE_LABEL"
-  "$BIN" doctor
-
-  log "installing remote helper on $REMOTE_LABEL"
-  "$BIN" install-remote
-else
-  log "skipping doctor and remote helper install"
-fi
+log "running setup"
+"$BIN" setup </dev/tty >/dev/tty
 
 cat <<EOF
 
 ssh-bin-paste installed.
 
-Start an agent:
-  $BIN start
+Start Codex:
+  $BIN start codex
+
+Start Claude Code:
+  $BIN start claude
 
 Attach from your SSH client:
   use the attach command printed by ssh-bin-paste start

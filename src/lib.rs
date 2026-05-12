@@ -7,5 +7,6 @@ pub mod daemon;
 pub mod doctor;
 pub mod remote_helper;
 pub mod remote_install;
+pub mod setup;
 pub mod ssh;
 pub mod transfer;
