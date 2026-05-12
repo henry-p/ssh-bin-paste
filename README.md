@@ -40,7 +40,9 @@ ssh -t vibeps 'tmux attach -t agent'
 - `tmux` on the remote host.
 - An agent CLI on the remote host, such as Codex or Claude Code.
 
-No remote daemon is installed. `install-remote` installs a tiny helper script that is invoked over SSH only when needed.
+No remote server is installed. `install-remote` installs a tiny helper script that is invoked over SSH when needed.
+
+`install-remote` also starts a tiny cleanup daemon on the remote host. It is not a server and does not listen on any port; it only wakes up periodically and removes old `ssh-bin-paste-*` files from the remote cache.
 
 ## Commands
 
@@ -53,6 +55,9 @@ ssh-bin-paste panes --host vibeps
 ssh-bin-paste panes --host vibeps --select
 ssh-bin-paste paste --host vibeps
 ssh-bin-paste cleanup --host vibeps
+ssh-bin-paste cleanup-daemon status --host vibeps
+ssh-bin-paste cleanup-daemon stop --host vibeps
+ssh-bin-paste cleanup-daemon start --host vibeps
 ssh-bin-paste daemon --host vibeps
 ssh-bin-paste daemon --host vibeps --hijack-paste
 ```
@@ -75,6 +80,11 @@ Default profile shape:
   "tmuxSession": "agent",
   "remoteCacheDir": "~/.cache/ssh-bin-paste/images",
   "remoteHelperPath": "~/.local/bin/ssh-bin-paste-remote",
+  "cleanupDaemon": {
+    "enabled": true,
+    "maxAgeSeconds": 86400,
+    "intervalSeconds": 300
+  },
   "agents": {
     "codex": { "command": "codex" },
     "claude": { "command": "claude" }
@@ -83,4 +93,3 @@ Default profile shape:
 ```
 
 Use `panes --select` if you want to adopt an existing `tmux` pane instead of the managed session.
-

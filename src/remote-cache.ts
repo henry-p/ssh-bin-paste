@@ -25,6 +25,17 @@ export async function cleanupRemoteImages(config: AppConfig, maxAgeSeconds: numb
   console.log(`cleaned images older than ${seconds}s on ${config.host}`);
 }
 
+export async function remoteCleanupDaemon(config: AppConfig, action: "start" | "stop" | "status"): Promise<void> {
+  const command = action === "start" ? "daemon-start" : action === "stop" ? "daemon-stop" : "daemon-status";
+  const args =
+    action === "start"
+      ? [command, config.remoteCacheDir, String(config.cleanupDaemon.maxAgeSeconds), String(config.cleanupDaemon.intervalSeconds)]
+      : [command];
+  const result = await runRemoteHelper(config, args);
+  if (result.exitCode !== 0) throw new Error(`Remote cleanup daemon ${action} failed: ${result.stderr.trim()}`);
+  console.log(result.stdout.trim());
+}
+
 async function ensureRemoteCache(config: AppConfig): Promise<string> {
   const result = await runRemoteHelper(config, ["ensure-cache", config.remoteCacheDir]);
   if (result.exitCode !== 0) throw new Error(`Remote cache is not writable: ${result.stderr.trim()}`);
@@ -45,4 +56,3 @@ function extensionForMime(mimeType: string): string {
       return "bin";
   }
 }
-

@@ -3,6 +3,9 @@ set -euo pipefail
 
 VERSION="0.1.0"
 DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/images}"
+STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
+DAEMON_PID_FILE="$STATE_DIR/cleanup-daemon.pid"
+DAEMON_LOG_FILE="$STATE_DIR/cleanup-daemon.log"
 
 usage() {
   cat >&2 <<'EOF'
@@ -14,6 +17,10 @@ commands:
   panes
   inject <target-pane>
   cleanup [cache-dir] [max-age-seconds]
+  daemon [cache-dir] [max-age-seconds] [interval-seconds]
+  daemon-start [cache-dir] [max-age-seconds] [interval-seconds]
+  daemon-stop
+  daemon-status
 EOF
 }
 
@@ -58,7 +65,67 @@ cleanup() {
   dir="$(expand_path "${1:-$DEFAULT_CACHE_DIR}")"
   max_age="${2:-86400}"
   mkdir -p "$dir"
-  find "$dir" -type f -name 'ssh-bin-paste-*' -mmin "+$((max_age / 60))" -delete 2>/dev/null || true
+  find "$dir" -type f -name 'ssh-bin-paste-*' -mmin "+$(((max_age + 59) / 60))" -delete 2>/dev/null || true
+}
+
+daemon() {
+  local dir max_age interval
+  dir="${1:-$DEFAULT_CACHE_DIR}"
+  max_age="${2:-86400}"
+  interval="${3:-300}"
+
+  while true; do
+    cleanup "$dir" "$max_age"
+    sleep "$interval"
+  done
+}
+
+daemon_pid_alive() {
+  local pid
+  [ -f "$DAEMON_PID_FILE" ] || return 1
+  pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null || true)"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+daemon_start() {
+  local dir max_age interval
+  dir="${1:-$DEFAULT_CACHE_DIR}"
+  max_age="${2:-86400}"
+  interval="${3:-300}"
+
+  mkdir -p "$STATE_DIR"
+  if daemon_pid_alive; then
+    printf 'already running pid=%s\n' "$(cat "$DAEMON_PID_FILE")"
+    return 0
+  fi
+
+  nohup "$0" daemon "$dir" "$max_age" "$interval" >>"$DAEMON_LOG_FILE" 2>&1 &
+  printf '%s\n' "$!" > "$DAEMON_PID_FILE"
+  printf 'started pid=%s max_age=%s interval=%s\n' "$!" "$max_age" "$interval"
+}
+
+daemon_stop() {
+  local pid
+  if ! daemon_pid_alive; then
+    rm -f "$DAEMON_PID_FILE"
+    printf 'not running\n'
+    return 0
+  fi
+
+  pid="$(cat "$DAEMON_PID_FILE")"
+  kill "$pid" 2>/dev/null || true
+  rm -f "$DAEMON_PID_FILE"
+  printf 'stopped pid=%s\n' "$pid"
+}
+
+daemon_status() {
+  if daemon_pid_alive; then
+    printf 'running pid=%s\n' "$(cat "$DAEMON_PID_FILE")"
+  else
+    rm -f "$DAEMON_PID_FILE"
+    printf 'not running\n'
+  fi
 }
 
 case "${1:-}" in
@@ -79,6 +146,20 @@ case "${1:-}" in
   cleanup)
     shift
     cleanup "${1:-}" "${2:-}"
+    ;;
+  daemon)
+    shift
+    daemon "${1:-}" "${2:-}" "${3:-}"
+    ;;
+  daemon-start)
+    shift
+    daemon_start "${1:-}" "${2:-}" "${3:-}"
+    ;;
+  daemon-stop)
+    daemon_stop
+    ;;
+  daemon-status)
+    daemon_status
     ;;
   *)
     usage

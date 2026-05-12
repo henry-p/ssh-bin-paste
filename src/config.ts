@@ -11,6 +11,11 @@ export interface AppConfig {
   tmuxSession: string;
   remoteCacheDir: string;
   remoteHelperPath: string;
+  cleanupDaemon: {
+    enabled: boolean;
+    maxAgeSeconds: number;
+    intervalSeconds: number;
+  };
   targetPane?: string;
   agents: Record<string, AgentProfile>;
   daemon: {
@@ -29,6 +34,11 @@ const DEFAULT_CONFIG: AppConfig = {
   tmuxSession: "agent",
   remoteCacheDir: "~/.cache/ssh-bin-paste/images",
   remoteHelperPath: "~/.local/bin/ssh-bin-paste-remote",
+  cleanupDaemon: {
+    enabled: true,
+    maxAgeSeconds: 86400,
+    intervalSeconds: 300,
+  },
   agents: {
     codex: { command: "codex" },
     claude: { command: "claude" },
@@ -60,6 +70,10 @@ export async function loadConfig(overrides: ConfigOverrides = {}): Promise<AppCo
       ...DEFAULT_CONFIG.agents,
       ...(fromDisk?.agents ?? {}),
     },
+    cleanupDaemon: {
+      ...DEFAULT_CONFIG.cleanupDaemon,
+      ...(fromDisk?.cleanupDaemon ?? {}),
+    },
     daemon: {
       ...DEFAULT_CONFIG.daemon,
       ...(fromDisk?.daemon ?? {}),
@@ -79,6 +93,10 @@ export async function saveConfigPatch(patch: Partial<AppConfig>): Promise<AppCon
     agents: {
       ...(existing?.agents ?? {}),
       ...(patch.agents ?? {}),
+    },
+    cleanupDaemon: {
+      ...(existing?.cleanupDaemon ?? {}),
+      ...(patch.cleanupDaemon ?? {}),
     },
     daemon: {
       ...(existing?.daemon ?? {}),

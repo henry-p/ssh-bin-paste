@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { loadConfig, resolveAgentCommand } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { installRemoteHelper } from "./remote-install.js";
-import { cleanupRemoteImages } from "./remote-cache.js";
+import { cleanupRemoteImages, remoteCleanupDaemon } from "./remote-cache.js";
 import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
 import { pasteClipboardImage } from "./paste.js";
 import { startManagedAgent } from "./start.js";
@@ -32,9 +32,16 @@ program
   .command("install-remote")
   .description("Install or update the remote helper.")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (options: { host: string }) => {
+  .option("--no-cleanup-daemon", "Do not start the remote cleanup daemon")
+  .option("--cleanup-max-age-seconds <seconds>", "Remote image retention", "86400")
+  .option("--cleanup-interval-seconds <seconds>", "Remote cleanup interval", "300")
+  .action(async (options: { host: string; cleanupDaemon?: boolean; cleanupMaxAgeSeconds: string; cleanupIntervalSeconds: string }) => {
     const config = await loadConfig({ host: options.host });
-    await installRemoteHelper(config);
+    await installRemoteHelper(config, {
+      cleanupDaemon: options.cleanupDaemon,
+      cleanupMaxAgeSeconds: Number.parseInt(options.cleanupMaxAgeSeconds, 10),
+      cleanupIntervalSeconds: Number.parseInt(options.cleanupIntervalSeconds, 10),
+    });
   });
 
 program
@@ -86,6 +93,17 @@ program
   .action(async (options: { host: string; maxAgeSeconds: string }) => {
     const config = await loadConfig({ host: options.host });
     await cleanupRemoteImages(config, Number.parseInt(options.maxAgeSeconds, 10));
+  });
+
+program
+  .command("cleanup-daemon")
+  .description("Manage the remote cache cleanup daemon.")
+  .argument("<action>", "start, stop, or status")
+  .option("--host <host>", "SSH host alias", "vibeps")
+  .action(async (action: string, options: { host: string }) => {
+    if (!["start", "stop", "status"].includes(action)) throw new Error("cleanup-daemon action must be start, stop, or status");
+    const config = await loadConfig({ host: options.host });
+    await remoteCleanupDaemon(config, action as "start" | "stop" | "status");
   });
 
 program

@@ -3,8 +3,15 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppConfig } from "./config.js";
 import { remotePathExpr, runSsh } from "./ssh.js";
+import { runRemoteHelper } from "./remote-helper.js";
 
-export async function installRemoteHelper(config: AppConfig): Promise<void> {
+export interface InstallRemoteOptions {
+  cleanupDaemon?: boolean;
+  cleanupMaxAgeSeconds?: number;
+  cleanupIntervalSeconds?: number;
+}
+
+export async function installRemoteHelper(config: AppConfig, options: InstallRemoteOptions = {}): Promise<void> {
   const script = await readRemoteHelperAsset();
   const dir = remoteDirname(config.remoteHelperPath);
 
@@ -22,6 +29,15 @@ export async function installRemoteHelper(config: AppConfig): Promise<void> {
   if (verify.exitCode !== 0) throw new Error(`Remote helper did not run: ${verify.stderr.trim()}`);
 
   console.log(`installed ${config.remoteHelperPath} on ${config.host} (${verify.stdout.trim()})`);
+
+  const daemonEnabled = options.cleanupDaemon ?? config.cleanupDaemon.enabled;
+  if (daemonEnabled) {
+    const maxAge = options.cleanupMaxAgeSeconds ?? config.cleanupDaemon.maxAgeSeconds;
+    const interval = options.cleanupIntervalSeconds ?? config.cleanupDaemon.intervalSeconds;
+    const daemon = await runRemoteHelper(config, ["daemon-start", config.remoteCacheDir, String(maxAge), String(interval)]);
+    if (daemon.exitCode !== 0) throw new Error(`Failed to start cleanup daemon: ${daemon.stderr.trim()}`);
+    console.log(`cleanup daemon ${daemon.stdout.trim()}`);
+  }
 }
 
 async function readRemoteHelperAsset(): Promise<string> {

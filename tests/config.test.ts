@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { AppConfig, resolveAgentCommand } from "../src/config.js";
 
 const config = {
+  cleanupDaemon: {
+    enabled: true,
+    maxAgeSeconds: 86400,
+    intervalSeconds: 300,
+  },
   agents: {
     codex: { command: "codex" },
     claude: { command: "claude --model sonnet" },
@@ -17,4 +22,3 @@ describe("resolveAgentCommand", () => {
     expect(resolveAgentCommand(config, "my-agent")).toBe("my-agent");
   });
 });
-
