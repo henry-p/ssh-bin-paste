@@ -3,10 +3,10 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-use crate::clipboard::CapturedPayload;
 use crate::config::AppConfig;
 use crate::remote_helper::run_remote_helper;
 use crate::ssh::{run_ssh, shell_quote, target_label};
+use crate::transfer::clipboard::CapturedPayload;
 
 pub fn upload_payload(config: &AppConfig, payload: &CapturedPayload) -> Result<String> {
     let cache_dir = ensure_remote_cache(config)?;

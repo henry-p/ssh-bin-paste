@@ -1,14 +1,14 @@
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
+use ssh_bin_paste::agent::start::start_managed_agent;
+use ssh_bin_paste::agent::tmux::{list_panes, print_panes, select_and_save_pane};
+use ssh_bin_paste::bridge::paste_clipboard_payload;
 use ssh_bin_paste::config::{ConfigOverrides, load_config, resolve_agent_command};
 use ssh_bin_paste::config_command::run_config_command;
 use ssh_bin_paste::daemon::run_daemon;
 use ssh_bin_paste::doctor::run_doctor;
-use ssh_bin_paste::panes::{list_panes, print_panes, select_and_save_pane};
-use ssh_bin_paste::paste::paste_clipboard_payload;
-use ssh_bin_paste::remote_cache::{cleanup_remote_files, remote_cleanup_daemon};
 use ssh_bin_paste::remote_install::{InstallRemoteOptions, install_remote_helper};
-use ssh_bin_paste::start::start_managed_agent;
+use ssh_bin_paste::transfer::cache::{cleanup_remote_files, remote_cleanup_daemon};
 
 #[derive(Debug, Parser)]
 #[command(
