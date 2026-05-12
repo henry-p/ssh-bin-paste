@@ -1,8 +1,10 @@
 # ssh-bin-paste
 
 Paste images and other supported local clipboard payloads into remote Claude or Codex CLI sessions over SSH.
+Keep using your normal SSH terminal.
+The tool attaches to a `tmux` session running `claude` or `codex` and pairs that terminal with your host.
 
-You keep using your normal SSH terminal. The tool attaches to a `tmux` session running `claude` or `codex` and pairs that terminal with your host.
+Inspired by the remote-agent screenshot paste problem: upload a local clipboard image over SSH and insert its remote file path into the active Claude or Codex session.
 
 ## Quickstart
 
