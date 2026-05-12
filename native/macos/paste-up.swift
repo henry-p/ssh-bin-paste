@@ -54,9 +54,9 @@ func runPasteCommand() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if let sshCommand = config.sshCommand {
-            process.arguments = [config.command, "paste", "--ssh", sshCommand]
+            process.arguments = [config.command, "__paste", "--ssh", sshCommand]
         } else {
-            process.arguments = [config.command, "paste", "--host", config.host]
+            process.arguments = [config.command, "__paste", "--host", config.host]
         }
         try? process.run()
     }

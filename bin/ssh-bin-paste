@@ -33,7 +33,6 @@ usage: ssh-bin-paste <command> [args]
 commands:
   config             configure SSH, install the remote helper, and start the paste shortcut
   up                 run the paste shortcut and auto-pair with remote attach
-  paste              manually paste the current clipboard payload
   version            print version
 USAGE
 }
@@ -378,7 +377,7 @@ json_field() {
   sed -n "s/.*\"$field\":\"\([^\"]*\)\".*/\1/p" | sed 's#\\/#/#g; s#\\"#"#g; s#\\\\#\\#g'
 }
 
-cmd_paste() {
+internal_paste() {
   load_config
   parse_remote_opts "$@"
   load_pairing_target || {
@@ -454,7 +453,7 @@ main() {
   [ $# -gt 0 ] && shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
-    paste) cmd_paste "$@" ;;
+    __paste) internal_paste "$@" ;;
     up) cmd_up "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;
     help|--help|-h|'') usage ;;

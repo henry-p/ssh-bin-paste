@@ -32,7 +32,6 @@ ssh-bin-paste up
 | `ssh-bin-paste config` | Mac | Configure SSH, install the remote helper, and start the paste shortcut. |
 | `ssh-bin-paste up` | Mac | Run the paste shortcut and wait for remote `attach` pairings. |
 | `ssh-bin-paste attach` | VPS | Choose and attach to the remote `tmux` session running Claude or Codex. |
-| `ssh-bin-paste paste` | Mac | Optional manual paste fallback. |
 
 ## Requirements
 
