@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export interface AgentProfile {
   command: string;
@@ -71,6 +71,25 @@ export async function loadConfig(overrides: ConfigOverrides = {}): Promise<AppCo
   };
 }
 
+export async function saveConfigPatch(patch: Partial<AppConfig>): Promise<AppConfig> {
+  const existing = await readConfigFile();
+  const next = {
+    ...(existing ?? {}),
+    ...patch,
+    agents: {
+      ...(existing?.agents ?? {}),
+      ...(patch.agents ?? {}),
+    },
+    daemon: {
+      ...(existing?.daemon ?? {}),
+      ...(patch.daemon ?? {}),
+    },
+  };
+  await mkdir(dirname(configPath()), { recursive: true });
+  await writeFile(configPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return loadConfig();
+}
+
 export function resolveAgentCommand(config: AppConfig, agent: string): string {
   return config.agents[agent]?.command ?? agent;
 }
@@ -87,4 +106,3 @@ async function readConfigFile(): Promise<Partial<AppConfig> | null> {
 function isMissingFile(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
-

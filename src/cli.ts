@@ -4,6 +4,7 @@ import { loadConfig, resolveAgentCommand } from "./config.js";
 import { runDoctor } from "./doctor.js";
 import { installRemoteHelper } from "./remote-install.js";
 import { cleanupRemoteImages } from "./remote-cache.js";
+import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
 
 const program = new Command();
 
@@ -47,9 +48,20 @@ program
   .command("panes")
   .description("List remote tmux panes that may contain agents.")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (options: { host: string }) => {
-    await loadConfig({ host: options.host });
-    console.log(`panes placeholder for ${options.host}`);
+  .option("--select", "Interactively save the target pane")
+  .option("--target <pane>", "Save this target pane")
+  .action(async (options: { host: string; select?: boolean; target?: string }) => {
+    const config = await loadConfig({ host: options.host });
+    const panes = await listPanes(config);
+    if (options.target) {
+      await selectAndSavePane(config, panes, options.target);
+      return;
+    }
+    if (options.select) {
+      await selectAndSavePane(config, panes);
+      return;
+    }
+    printPanes(panes);
   });
 
 program
