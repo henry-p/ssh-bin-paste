@@ -20,7 +20,7 @@ EOF
 expand_path() {
   case "$1" in
     "~") printf '%s\n' "$HOME" ;;
-    "~/"*) printf '%s/%s\n' "$HOME" "${1#~/}" ;;
+    \~/*) printf '%s/%s\n' "$HOME" "${1#\~/}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
@@ -85,4 +85,3 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-
