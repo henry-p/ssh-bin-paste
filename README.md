@@ -1,14 +1,8 @@
 # ssh-bin-paste
 
-Paste supported local clipboard payloads into remote terminal agents over SSH.
+Paste images and other supported local clipboard payloads into remote Claude or Codex CLI sessions over SSH.
 
-The normal installer is script-only. You do not need Git, Rust, or Cargo to install or run it.
-
-Images are the main supported clipboard payload today. The bridge is file-based, so every supported binary file type follows the same upload-and-paste path.
-
-Codex and Claude Code are both supported. Run either agent on the VPS inside `tmux`; ssh-bin-paste pairs your Mac with the SSH terminal you attach from.
-
-The macOS shortcut helper currently runs from small Swift scripts. If Swift is unavailable, macOS may ask you to install Command Line Tools; future releases should use prebuilt helpers.
+ssh-bin-paste uses `tmux` on the remote host so it has a stable place to inject the pasted file path. You keep using your normal SSH terminal; inside SSH, `ssh-bin-paste attach` attaches to the tmux session running Claude or Codex and pairs that terminal with your Mac.
 
 ## Quickstart
 
@@ -29,7 +23,7 @@ ssh example-vps
 ssh-bin-paste attach
 ```
 
-Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut. The payload is uploaded over SSH and the remote path is pasted into the currently attached agent session.
+Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut. The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
 
 If the paste shortcut is not running:
 
@@ -37,15 +31,22 @@ If the paste shortcut is not running:
 ssh-bin-paste up
 ```
 
-## What config does
+## More commands
 
-The installer runs `ssh-bin-paste config`. It guides you through SSH configuration, checks the remote host, installs the tiny remote helper, and starts the local paste shortcut.
-
-If you installed manually, run:
-
-```sh
-ssh-bin-paste config
-```
+| Command | Where | Purpose |
+| --- | --- | --- |
+| `ssh-bin-paste config` | Mac | Configure SSH, install the remote helper, and start the paste shortcut. |
+| `ssh-bin-paste pair` | Mac | Pair this Mac with the next remote `attach`. |
+| `ssh-bin-paste up` | Mac | Run the paste shortcut listener in the foreground. |
+| `ssh-bin-paste up-start` | Mac | Start the paste shortcut listener in the background. |
+| `ssh-bin-paste paste` | Mac | Upload the current clipboard payload and paste its remote path into the paired session. |
+| `ssh-bin-paste doctor` | Mac | Check local requirements, SSH access, remote `tmux`, agent commands, and cache access. |
+| `ssh-bin-paste install-remote` | Mac | Install the tiny remote helper on the VPS. |
+| `ssh-bin-paste panes` | Mac | List remote `tmux` panes. |
+| `ssh-bin-paste cleanup` | Mac | Remove old remote cached payloads. |
+| `ssh-bin-paste cleanup-worker start|stop|status` | Mac | Manage automatic remote cache cleanup. |
+| `ssh-bin-paste attach` | VPS | Choose and attach to the remote `tmux` session running Claude or Codex. |
+| `ssh-bin-paste version` | Mac/VPS | Print the installed version. |
 
 ## Requirements
 
@@ -53,4 +54,4 @@ ssh-bin-paste config
 - Swift or Apple Command Line Tools for the current macOS helper.
 - SSH access to the remote host.
 - `tmux` on the remote host.
-- Codex and/or Claude Code on the remote host.
+- Claude Code and/or Codex on the remote host.
