@@ -13,6 +13,7 @@ usage: ssh-bin-paste-remote <command> [args]
 
 commands:
   version
+  attach
   ensure-cache [cache-dir]
   panes
   inject <target-pane>
@@ -43,6 +44,102 @@ ensure_cache() {
 
 list_panes() {
   tmux list-panes -a -F '#{session_name}	#{window_index}.#{pane_index}	#{pane_id}	#{pane_pid}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true
+}
+
+session_score() {
+  local target="$1"
+  local score=0
+  local session command title haystack
+
+  case "$target" in
+    agent) score=$((score + 20)) ;;
+    *codex*|*claude*|*agent*) score=$((score + 8)) ;;
+  esac
+
+  while IFS=$'\t' read -r session command title; do
+    [ "$session" = "$target" ] || continue
+    haystack="$(printf '%s %s %s' "$session" "$command" "$title" | tr '[:upper:]' '[:lower:]')"
+    case "$haystack" in *codex*) score=$((score + 12)) ;; esac
+    case "$haystack" in *claude*) score=$((score + 12)) ;; esac
+    case "$haystack" in *agent*) score=$((score + 4)) ;; esac
+  done < <(tmux list-panes -a -F '#{session_name}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true)
+
+  printf '%s\n' "$score"
+}
+
+rank_sessions() {
+  local session windows attached score
+  while IFS=$'\t' read -r session windows attached; do
+    [ -n "$session" ] || continue
+    score="$(session_score "$session")"
+    printf '%s\t%s\t%s\t%s\n' "$score" "$session" "$windows" "$attached"
+  done < <(tmux list-sessions -F '#{session_name}	#{session_windows}	#{session_attached}' 2>/dev/null || true) \
+    | sort -rn -k1,1
+}
+
+attach_tmux() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    printf 'tmux is not installed on this host\n' >&2
+    return 1
+  fi
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    printf 'ssh-bin-paste attach requires an interactive SSH terminal\n' >&2
+    return 1
+  fi
+
+  local sessions=()
+  local scores=()
+  local windows=()
+  local attached=()
+  local score session window_count attached_count
+
+  while IFS=$'\t' read -r score session window_count attached_count; do
+    sessions+=("$session")
+    scores+=("$score")
+    windows+=("$window_count")
+    attached+=("$attached_count")
+  done < <(rank_sessions)
+
+  if [ "${#sessions[@]}" -eq 0 ]; then
+    printf 'No tmux sessions found. Start an agent first with ssh-bin-paste start codex or ssh-bin-paste start claude on your Mac.\n' >&2
+    return 1
+  fi
+
+  local default="${sessions[0]}"
+  if [ "${scores[0]}" -gt 0 ]; then
+    printf 'Suggested tmux session: %s\n' "$default"
+  else
+    printf 'No obvious agent session found. Choose a tmux session to attach.\n'
+  fi
+  printf '\n'
+  printf 'Available tmux sessions:\n'
+
+  local i label
+  for i in "${!sessions[@]}"; do
+    label=""
+    if [ "$i" -eq 0 ] && [ "${scores[0]}" -gt 0 ]; then
+      label=" suggested"
+    fi
+    printf '  %s. %s%s (windows=%s attached=%s)\n' "$((i + 1))" "${sessions[$i]}" "$label" "${windows[$i]}" "${attached[$i]}"
+  done
+
+  printf '\nAttach to tmux session [%s]: ' "$default"
+  local answer target
+  IFS= read -r answer
+  if [ -z "$answer" ]; then
+    target="$default"
+  elif [[ "$answer" =~ ^[0-9]+$ ]] && [ "$answer" -ge 1 ] && [ "$answer" -le "${#sessions[@]}" ]; then
+    target="${sessions[$((answer - 1))]}"
+  else
+    target="$answer"
+  fi
+
+  if ! tmux has-session -t "$target" 2>/dev/null; then
+    printf 'tmux session not found: %s\n' "$target" >&2
+    return 1
+  fi
+
+  exec tmux attach-session -t "$target"
 }
 
 inject() {
@@ -131,6 +228,9 @@ daemon_status() {
 case "${1:-}" in
   version)
     printf '%s\n' "$VERSION"
+    ;;
+  attach)
+    attach_tmux
     ;;
   ensure-cache)
     shift

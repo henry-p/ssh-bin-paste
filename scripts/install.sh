@@ -145,7 +145,7 @@ Start Claude Code:
   $BIN start claude
 
 Attach from your SSH client:
-  use the attach command printed by ssh-bin-paste start
+  ssh into your VPS, then run: ssh-bin-paste attach
 
 Paste a supported file after copying it locally:
   $BIN paste

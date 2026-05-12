@@ -26,6 +26,12 @@ ssh-bin-paste start claude
 
 Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut to send it to the remote agent.
 
+When you SSH into your VPS, run:
+
+```sh
+ssh-bin-paste attach
+```
+
 ## What setup does
 
 The installer runs `ssh-bin-paste setup`. It guides you through SSH configuration, checks the remote host, installs the tiny remote helper, and starts remote cache cleanup.
