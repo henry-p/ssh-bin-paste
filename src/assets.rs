@@ -13,4 +13,3 @@ pub fn write_temp_asset(name: &str, contents: &str) -> Result<PathBuf> {
     fs::write(&path, contents).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(path)
 }
-

@@ -104,4 +104,3 @@ fn extension_for_mime(mime_type: &str) -> &'static str {
         _ => "bin",
     }
 }
-

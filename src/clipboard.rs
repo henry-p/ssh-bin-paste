@@ -36,4 +36,3 @@ pub fn capture_clipboard_image() -> Result<CapturedImage> {
     }
     serde_json::from_str(&result.stdout).context("clipboard helper returned invalid JSON")
 }
-

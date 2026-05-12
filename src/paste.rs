@@ -36,4 +36,3 @@ pub fn inject_text(config: &AppConfig, target_pane: &str, text: &str) -> Result<
     }
     Ok(())
 }
-

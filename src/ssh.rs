@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::io::Write;
 
 use crate::config::AppConfig;
 
@@ -28,7 +28,11 @@ impl SshTarget for AppConfig {
 }
 
 pub fn command_exists(command: &str) -> Result<Option<String>> {
-    let result = run_local("sh", &["-lc", &format!("command -v {}", shell_quote(command))], None)?;
+    let result = run_local(
+        "sh",
+        &["-lc", &format!("command -v {}", shell_quote(command))],
+        None,
+    )?;
     let path = result.stdout.trim().to_string();
     if result.exit_code == 0 && !path.is_empty() {
         Ok(Some(path))
@@ -43,7 +47,11 @@ pub fn run_ssh<T: SshTarget>(
     input: Option<&[u8]>,
 ) -> Result<CommandResult> {
     let args = ssh_args(target, remote_command)?;
-    run_local(&args[0], &args[1..].iter().map(String::as_str).collect::<Vec<_>>(), input)
+    run_local(
+        &args[0],
+        &args[1..].iter().map(String::as_str).collect::<Vec<_>>(),
+        input,
+    )
 }
 
 pub fn run_local(program: &str, args: &[&str], input: Option<&[u8]>) -> Result<CommandResult> {
@@ -292,6 +300,9 @@ mod tests {
         assert_eq!(args[0], "ssh");
         assert_eq!(args.last().unwrap(), "printf ok");
         assert!(args.contains(&"root@203.0.113.10".to_string()));
-        assert!(args.iter().any(|arg| arg.ends_with("/.ssh/example_ed25519")));
+        assert!(
+            args.iter()
+                .any(|arg| arg.ends_with("/.ssh/example_ed25519"))
+        );
     }
 }

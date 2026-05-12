@@ -14,4 +14,3 @@ pub fn run_remote_helper(
         .join(" ");
     run_ssh(config, &command, input)
 }
-

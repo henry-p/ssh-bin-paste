@@ -94,6 +94,6 @@ Config is optional and lives at:
 ~/.config/ssh-bin-paste/config.json
 ```
 
-Run `ssh-bin-paste config` to open the config helper; it creates and edits this file. Use `ssh-bin-paste config --path` to print the path without opening an editor.
+Run `ssh-bin-paste config` to open the config wizard; it guides you through setup and writes this file. Use `ssh-bin-paste config --path` to print the path without running the wizard.
 
 Use `panes --select` if you want to adopt an existing `tmux` pane instead of the managed session.

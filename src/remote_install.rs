@@ -14,9 +14,16 @@ pub struct InstallRemoteOptions {
 
 pub fn install_remote_helper(config: &AppConfig, options: &InstallRemoteOptions) -> Result<()> {
     let dir = remote_dirname(&config.remote_helper_path);
-    let mkdir = run_ssh(config, &format!("mkdir -p {}", remote_path_expr(&dir)), None)?;
+    let mkdir = run_ssh(
+        config,
+        &format!("mkdir -p {}", remote_path_expr(&dir)),
+        None,
+    )?;
     if mkdir.exit_code != 0 {
-        bail!("failed to create remote helper directory: {}", mkdir.stderr.trim());
+        bail!(
+            "failed to create remote helper directory: {}",
+            mkdir.stderr.trim()
+        );
     }
 
     let install = run_ssh(
@@ -48,7 +55,10 @@ pub fn install_remote_helper(config: &AppConfig, options: &InstallRemoteOptions)
         verify.stdout.trim()
     );
 
-    if options.cleanup_daemon.unwrap_or(config.cleanup_daemon.enabled) {
+    if options
+        .cleanup_daemon
+        .unwrap_or(config.cleanup_daemon.enabled)
+    {
         let max_age = options
             .cleanup_max_age_seconds
             .unwrap_or(config.cleanup_daemon.max_age_seconds);
@@ -82,4 +92,3 @@ fn remote_dirname(path: &str) -> String {
         _ => ".".to_string(),
     }
 }
-

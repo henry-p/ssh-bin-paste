@@ -11,7 +11,10 @@ use ssh_bin_paste::remote_install::{InstallRemoteOptions, install_remote_helper}
 use ssh_bin_paste::start::start_managed_agent;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Paste local clipboard images into remote terminal agents over SSH.")]
+#[command(
+    version,
+    about = "Paste local clipboard images into remote terminal agents over SSH."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -54,8 +57,8 @@ impl RemoteArgs {
 struct ConfigArgs {
     #[arg(long, help = "Print the config file path without opening it")]
     path: bool,
-    #[arg(long, help = "Editor command to use")]
-    editor: Option<String>,
+    #[arg(long, help = "Print the effective config without running the wizard")]
+    print: bool,
 }
 
 #[derive(Debug, Args)]
@@ -110,7 +113,11 @@ struct PasteArgs {
 struct CleanupArgs {
     #[command(flatten)]
     remote: RemoteArgs,
-    #[arg(long, default_value_t = 86_400, help = "Delete images older than this many seconds")]
+    #[arg(
+        long,
+        default_value_t = 86_400,
+        help = "Delete images older than this many seconds"
+    )]
     max_age_seconds: u64,
 }
 
@@ -139,7 +146,7 @@ fn main() {
 
 fn run() -> Result<()> {
     match Cli::parse().command {
-        Commands::Config(args) => run_config_command(args.path, args.editor.as_deref()),
+        Commands::Config(args) => run_config_command(args.path, args.print),
         Commands::Doctor(args) => {
             let config = args.remote.load_config()?;
             let agent_command = resolve_agent_command(&config, &args.agent);
@@ -194,4 +201,3 @@ fn run() -> Result<()> {
         }
     }
 }
-

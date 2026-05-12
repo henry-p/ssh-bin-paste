@@ -105,7 +105,8 @@ pub fn load_config(overrides: ConfigOverrides) -> Result<AppConfig> {
     let mut config = match fs::read_to_string(config_path()) {
         Ok(raw) => {
             let mut base = serde_json::to_value(AppConfig::default())?;
-            let user = serde_json::from_str::<Value>(&raw).context("failed to parse config file")?;
+            let user =
+                serde_json::from_str::<Value>(&raw).context("failed to parse config file")?;
             merge_json(&mut base, user);
             serde_json::from_value::<AppConfig>(base).context("failed to load config file")?
         }
@@ -125,10 +126,14 @@ pub fn load_config(overrides: ConfigOverrides) -> Result<AppConfig> {
 pub fn save_config(config: &AppConfig) -> Result<()> {
     let path = config_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    fs::write(&path, format!("{}\n", serde_json::to_string_pretty(config)?))
-        .with_context(|| format!("failed to write {}", path.display()))
+    fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(config)?),
+    )
+    .with_context(|| format!("failed to write {}", path.display()))
 }
 
 pub fn ensure_config_file() -> Result<PathBuf> {
@@ -137,7 +142,8 @@ pub fn ensure_config_file() -> Result<PathBuf> {
         return Ok(path);
     }
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
     }
     fs::write(
         &path,
@@ -186,6 +192,9 @@ mod tests {
         );
 
         assert_eq!(resolve_agent_command(&config, "custom"), "agent --flag");
-        assert_eq!(resolve_agent_command(&config, "unknown-agent"), "unknown-agent");
+        assert_eq!(
+            resolve_agent_command(&config, "unknown-agent"),
+            "unknown-agent"
+        );
     }
 }

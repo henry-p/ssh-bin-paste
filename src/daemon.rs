@@ -33,4 +33,3 @@ pub fn run_daemon(config: &AppConfig, hijack_paste: bool) -> Result<()> {
     }
     Ok(())
 }
-

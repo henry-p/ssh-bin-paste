@@ -19,7 +19,10 @@ pub fn start_managed_agent(
     );
     let result = run_ssh(config, &tmux_command, None)?;
     if result.exit_code != 0 {
-        bail!("failed to start managed tmux session: {}", result.stderr.trim());
+        bail!(
+            "failed to start managed tmux session: {}",
+            result.stderr.trim()
+        );
     }
 
     let mut started_config = config.clone();
@@ -46,4 +49,3 @@ pub fn start_managed_agent(
     );
     Ok(())
 }
-

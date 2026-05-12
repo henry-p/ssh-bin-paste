@@ -65,10 +65,9 @@ pub fn select_and_save_pane(
         Some(target) => target.to_string(),
         None => choose_pane(panes)?,
     };
-    let Some(found) = panes
-        .iter()
-        .find(|pane| pane.pane_id == target || format!("{}:{}", pane.session_name, pane.window_pane) == target)
-    else {
+    let Some(found) = panes.iter().find(|pane| {
+        pane.pane_id == target || format!("{}:{}", pane.session_name, pane.window_pane) == target
+    }) else {
         bail!("Target pane {target} was not found.");
     };
 

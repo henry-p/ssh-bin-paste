@@ -33,7 +33,14 @@ pub fn run_doctor(config: &AppConfig, agent_command: &str) -> Result<bool> {
         });
     }
 
-    checks.push(remote_check(config, "ssh access", "printf ok", "ok", true, "ok")?);
+    checks.push(remote_check(
+        config,
+        "ssh access",
+        "printf ok",
+        "ok",
+        true,
+        "ok",
+    )?);
     checks.push(remote_command_check(config, "remote tmux", "tmux", true)?);
     checks.push(remote_command_check(
         config,
@@ -121,4 +128,3 @@ fn remote_check(
         required,
     })
 }
-
