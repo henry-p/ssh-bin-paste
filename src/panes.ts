@@ -44,7 +44,7 @@ export async function selectAndSavePane(config: AppConfig, panes: TmuxPane[], re
   const found = panes.find((pane) => pane.paneId === target || `${pane.sessionName}:${pane.windowPane}` === target);
   if (!found) throw new Error(`Target pane ${target} was not found.`);
 
-  await saveConfigPatch({ host: config.host, targetPane: found.paneId });
+  await saveConfigPatch({ host: config.host, sshCommand: config.sshCommand, targetPane: found.paneId });
   console.log(`saved target pane ${found.paneId} (${found.sessionName}:${found.windowPane})`);
   return found.paneId;
 }

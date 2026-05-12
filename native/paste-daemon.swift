@@ -5,6 +5,7 @@ import Foundation
 struct DaemonConfig {
     let command: String
     let host: String
+    let sshCommand: String?
     let hijackPaste: Bool
     let allowlistedApps: Set<String>
 }
@@ -48,7 +49,11 @@ func runPasteCommand() {
     DispatchQueue.global(qos: .userInitiated).async {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = [config.command, "paste", "--host", config.host]
+        if let sshCommand = config.sshCommand {
+            process.arguments = [config.command, "paste", "--ssh", sshCommand]
+        } else {
+            process.arguments = [config.command, "paste", "--host", config.host]
+        }
         try? process.run()
     }
 }
@@ -89,8 +94,9 @@ guard let command = valueAfter("--command") else {
 }
 
 let host = valueAfter("--host") ?? "vibeps"
+let sshCommand = valueAfter("--ssh")
 let apps = Set((valueAfter("--allowlisted-apps") ?? "").split(separator: ",").map(String.init))
-config = DaemonConfig(command: command, host: host, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
+config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
 
 let mask = (1 << CGEventType.keyDown.rawValue)
 guard let tap = CGEvent.tapCreate(

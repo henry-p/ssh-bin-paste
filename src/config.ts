@@ -8,6 +8,7 @@ export interface AgentProfile {
 
 export interface AppConfig {
   host: string;
+  sshCommand?: string;
   tmuxSession: string;
   remoteCacheDir: string;
   remoteHelperPath: string;
@@ -27,6 +28,7 @@ export interface AppConfig {
 
 export interface ConfigOverrides {
   host?: string;
+  sshCommand?: string;
 }
 
 const DEFAULT_CONFIG: AppConfig = {

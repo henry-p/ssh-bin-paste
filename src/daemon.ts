@@ -13,11 +13,11 @@ export async function runDaemon(config: AppConfig, options: DaemonOptions): Prom
     helper,
     "--command",
     process.argv[1],
-    "--host",
-    config.host,
     "--allowlisted-apps",
     config.daemon.allowlistedApps.join(","),
   ];
+  if (config.sshCommand) args.push("--ssh", config.sshCommand);
+  else args.push("--host", config.host);
   if (options.hijackPaste) args.push("--hijack-paste");
 
   await new Promise<void>((resolvePromise, reject) => {

@@ -7,7 +7,7 @@ Paste local clipboard images into remote terminal agents over SSH.
 ## Quickstart
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
 Then start an agent:
@@ -43,13 +43,16 @@ The install script clones or updates the repo at `~/coding/private/ssh-bin-paste
 Install options:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
   SSH_BIN_PASTE_HOST=vibeps SSH_BIN_PASTE_AGENT=claude bash
 
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
+  SSH_BIN_PASTE_SSH='ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' bash
+
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
   SSH_BIN_PASTE_DIR=~/tools/ssh-bin-paste bash
 
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
   SSH_BIN_PASTE_SKIP_REMOTE=1 bash
 ```
 
@@ -61,12 +64,16 @@ No remote server is installed. `install-remote` installs a tiny helper script th
 
 ```sh
 ssh-bin-paste doctor --host vibeps --agent codex
+ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
 ssh-bin-paste install-remote --host vibeps
+ssh-bin-paste install-remote --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
 ssh-bin-paste start --host vibeps --agent codex
+ssh-bin-paste start --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
 ssh-bin-paste start --host vibeps --agent claude
 ssh-bin-paste panes --host vibeps
 ssh-bin-paste panes --host vibeps --select
 ssh-bin-paste paste --host vibeps
+ssh-bin-paste paste --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
 ssh-bin-paste cleanup --host vibeps
 ssh-bin-paste cleanup-daemon status --host vibeps
 ssh-bin-paste cleanup-daemon stop --host vibeps
@@ -90,6 +97,7 @@ Default profile shape:
 ```json
 {
   "host": "vibeps",
+  "sshCommand": "ssh -i ~/.ssh/example_ed25519 root@203.0.113.10",
   "tmuxSession": "agent",
   "remoteCacheDir": "~/.cache/ssh-bin-paste/images",
   "remoteHelperPath": "~/.local/bin/ssh-bin-paste-remote",

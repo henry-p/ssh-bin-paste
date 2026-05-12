@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { remotePathExpr, shellQuote } from "../src/ssh.js";
+import { parseShellWords, remotePathExpr, shellQuote, sshArgs } from "../src/ssh.js";
 
 describe("shellQuote", () => {
   it("quotes single quotes safely", () => {
@@ -17,3 +17,28 @@ describe("remotePathExpr", () => {
   });
 });
 
+describe("parseShellWords", () => {
+  it("parses quoted ssh commands", () => {
+    expect(parseShellWords("ssh -i ~/.ssh/example_ed25519 root@203.0.113.10")).toEqual([
+      "ssh",
+      "-i",
+      "~/.ssh/example_ed25519",
+      "root@203.0.113.10",
+    ]);
+    expect(parseShellWords("ssh -o 'ProxyJump jump host' user@example")).toEqual(["ssh", "-o", "ProxyJump jump host", "user@example"]);
+  });
+});
+
+describe("sshArgs", () => {
+  it("uses host aliases directly", () => {
+    expect(sshArgs("vibeps", "printf ok")).toEqual(["ssh", "vibeps", "printf ok"]);
+  });
+
+  it("appends remote command to full ssh commands", () => {
+    const args = sshArgs({ host: "ignored", sshCommand: "ssh -i ~/.ssh/example_ed25519 root@203.0.113.10" }, "printf ok");
+    expect(args[0]).toBe("ssh");
+    expect(args.at(-1)).toBe("printf ok");
+    expect(args).toContain("root@203.0.113.10");
+    expect(args.find((arg) => arg.endsWith("/.ssh/example_ed25519"))).toBeTruthy();
+  });
+});

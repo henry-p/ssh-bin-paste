@@ -4,14 +4,14 @@ import { basename } from "node:path";
 import { AppConfig } from "./config.js";
 import { CapturedImage } from "./clipboard.js";
 import { runRemoteHelper } from "./remote-helper.js";
-import { runSsh, shellQuote } from "./ssh.js";
+import { runSsh, shellQuote, targetLabel } from "./ssh.js";
 
 export async function uploadImage(config: AppConfig, image: CapturedImage): Promise<string> {
   const cacheDir = await ensureRemoteCache(config);
   const extension = extensionForMime(image.mimeType);
   const remotePath = `${cacheDir.replace(/\/+$/, "")}/ssh-bin-paste-${Date.now()}-${randomUUID()}.${extension}`;
   const data = await readFile(image.path);
-  const result = await runSsh(config.host, `cat > ${shellQuote(remotePath)} && chmod 0600 ${shellQuote(remotePath)}`, data);
+  const result = await runSsh(config, `cat > ${shellQuote(remotePath)} && chmod 0600 ${shellQuote(remotePath)}`, data);
   if (result.exitCode !== 0) {
     throw new Error(`Failed to upload ${basename(image.path)}: ${result.stderr.trim() || result.stdout.trim()}`);
   }
@@ -22,7 +22,7 @@ export async function cleanupRemoteImages(config: AppConfig, maxAgeSeconds: numb
   const seconds = Number.isFinite(maxAgeSeconds) && maxAgeSeconds > 0 ? Math.floor(maxAgeSeconds) : 86400;
   const result = await runRemoteHelper(config, ["cleanup", config.remoteCacheDir, String(seconds)]);
   if (result.exitCode !== 0) throw new Error(`Remote cleanup failed: ${result.stderr.trim()}`);
-  console.log(`cleaned images older than ${seconds}s on ${config.host}`);
+  console.log(`cleaned images older than ${seconds}s on ${targetLabel(config)}`);
 }
 
 export async function remoteCleanupDaemon(config: AppConfig, action: "start" | "stop" | "status"): Promise<void> {

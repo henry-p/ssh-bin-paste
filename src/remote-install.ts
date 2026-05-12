@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppConfig } from "./config.js";
-import { remotePathExpr, runSsh } from "./ssh.js";
+import { remotePathExpr, runSsh, targetLabel } from "./ssh.js";
 import { runRemoteHelper } from "./remote-helper.js";
 
 export interface InstallRemoteOptions {
@@ -15,20 +15,20 @@ export async function installRemoteHelper(config: AppConfig, options: InstallRem
   const script = await readRemoteHelperAsset();
   const dir = remoteDirname(config.remoteHelperPath);
 
-  const mkdir = await runSsh(config.host, `mkdir -p ${remotePathExpr(dir)}`);
+  const mkdir = await runSsh(config, `mkdir -p ${remotePathExpr(dir)}`);
   if (mkdir.exitCode !== 0) throw new Error(`Failed to create remote helper directory: ${mkdir.stderr.trim()}`);
 
   const install = await runSsh(
-    config.host,
+    config,
     `cat > ${remotePathExpr(config.remoteHelperPath)} && chmod 0755 ${remotePathExpr(config.remoteHelperPath)}`,
     script,
   );
   if (install.exitCode !== 0) throw new Error(`Failed to install remote helper: ${install.stderr.trim()}`);
 
-  const verify = await runSsh(config.host, `${remotePathExpr(config.remoteHelperPath)} version`);
+  const verify = await runSsh(config, `${remotePathExpr(config.remoteHelperPath)} version`);
   if (verify.exitCode !== 0) throw new Error(`Remote helper did not run: ${verify.stderr.trim()}`);
 
-  console.log(`installed ${config.remoteHelperPath} on ${config.host} (${verify.stdout.trim()})`);
+  console.log(`installed ${config.remoteHelperPath} on ${targetLabel(config)} (${verify.stdout.trim()})`);
 
   const daemonEnabled = options.cleanupDaemon ?? config.cleanupDaemon.enabled;
   if (daemonEnabled) {

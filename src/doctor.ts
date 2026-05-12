@@ -44,7 +44,7 @@ export async function runDoctor(config: AppConfig, agentCommand: string): Promis
 }
 
 async function remoteCommandCheck(config: AppConfig, label: string, command: string, required: boolean): Promise<Check> {
-  const result = await runSsh(config.host, `command -v ${shellQuote(command)} 2>/dev/null || true`);
+  const result = await runSsh(config, `command -v ${shellQuote(command)} 2>/dev/null || true`);
   const detail = result.stdout.trim();
   return {
     label,
@@ -72,7 +72,7 @@ async function remoteCheck(
   required: boolean,
   successDetail = expected,
 ): Promise<Check> {
-  const result = await runSsh(config.host, command);
+  const result = await runSsh(config, command);
   const out = result.stdout.trim();
   const err = result.stderr.trim();
   const ok = result.exitCode === 0 && out === expected;

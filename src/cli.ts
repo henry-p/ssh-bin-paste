@@ -11,32 +11,43 @@ import { runDaemon } from "./daemon.js";
 
 const program = new Command();
 
+interface RemoteOptions {
+  host: string;
+  ssh?: string;
+}
+
+function withRemoteOptions(command: Command): Command {
+  return command
+    .option("--host <host>", "SSH host alias", "vibeps")
+    .option("--ssh <command>", "Full SSH command, for example: ssh -i ~/.ssh/key user@host");
+}
+
+async function loadRemoteConfig(options: RemoteOptions) {
+  return loadConfig({ host: options.host, sshCommand: options.ssh });
+}
+
 program
   .name("ssh-bin-paste")
   .description("Paste local clipboard images into remote terminal agents over SSH.")
   .version("0.1.0");
 
-program
-  .command("doctor")
+withRemoteOptions(program.command("doctor"))
   .description("Check local and remote prerequisites.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--agent <agent>", "Agent profile or command", "codex")
-  .action(async (options: { host: string; agent: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { agent: string }) => {
+    const config = await loadRemoteConfig(options);
     const agentCommand = resolveAgentCommand(config, options.agent);
     const ok = await runDoctor(config, agentCommand);
     process.exitCode = ok ? 0 : 1;
   });
 
-program
-  .command("install-remote")
+withRemoteOptions(program.command("install-remote"))
   .description("Install or update the remote helper.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--no-cleanup-daemon", "Do not start the remote cleanup daemon")
   .option("--cleanup-max-age-seconds <seconds>", "Remote image retention", "86400")
   .option("--cleanup-interval-seconds <seconds>", "Remote cleanup interval", "300")
-  .action(async (options: { host: string; cleanupDaemon?: boolean; cleanupMaxAgeSeconds: string; cleanupIntervalSeconds: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { cleanupDaemon?: boolean; cleanupMaxAgeSeconds: string; cleanupIntervalSeconds: string }) => {
+    const config = await loadRemoteConfig(options);
     await installRemoteHelper(config, {
       cleanupDaemon: options.cleanupDaemon,
       cleanupMaxAgeSeconds: Number.parseInt(options.cleanupMaxAgeSeconds, 10),
@@ -44,25 +55,21 @@ program
     });
   });
 
-program
-  .command("start")
+withRemoteOptions(program.command("start"))
   .description("Start an agent inside a managed tmux session.")
   .requiredOption("--agent <agent>", "Agent profile or command")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--session <name>", "Managed tmux session name")
-  .action(async (options: { agent: string; host: string; session?: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { agent: string; session?: string }) => {
+    const config = await loadRemoteConfig(options);
     await startManagedAgent(config, options.agent, options.session);
   });
 
-program
-  .command("panes")
+withRemoteOptions(program.command("panes"))
   .description("List remote tmux panes that may contain agents.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--select", "Interactively save the target pane")
   .option("--target <pane>", "Save this target pane")
-  .action(async (options: { host: string; select?: boolean; target?: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { select?: boolean; target?: string }) => {
+    const config = await loadRemoteConfig(options);
     const panes = await listPanes(config);
     if (options.target) {
       await selectAndSavePane(config, panes, options.target);
@@ -75,44 +82,36 @@ program
     printPanes(panes);
   });
 
-program
-  .command("paste")
+withRemoteOptions(program.command("paste"))
   .description("Paste the local clipboard image into a remote agent pane.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--target <pane>", "tmux target pane id")
-  .action(async (options: { host: string; target?: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { target?: string }) => {
+    const config = await loadRemoteConfig(options);
     await pasteClipboardImage(config, options.target);
   });
 
-program
-  .command("cleanup")
+withRemoteOptions(program.command("cleanup"))
   .description("Remove old staged remote images.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--max-age-seconds <seconds>", "Delete images older than this many seconds", "86400")
-  .action(async (options: { host: string; maxAgeSeconds: string }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { maxAgeSeconds: string }) => {
+    const config = await loadRemoteConfig(options);
     await cleanupRemoteImages(config, Number.parseInt(options.maxAgeSeconds, 10));
   });
 
-program
-  .command("cleanup-daemon")
+withRemoteOptions(program.command("cleanup-daemon"))
   .description("Manage the remote cache cleanup daemon.")
   .argument("<action>", "start, stop, or status")
-  .option("--host <host>", "SSH host alias", "vibeps")
-  .action(async (action: string, options: { host: string }) => {
+  .action(async (action: string, options: RemoteOptions) => {
     if (!["start", "stop", "status"].includes(action)) throw new Error("cleanup-daemon action must be start, stop, or status");
-    const config = await loadConfig({ host: options.host });
+    const config = await loadRemoteConfig(options);
     await remoteCleanupDaemon(config, action as "start" | "stop" | "status");
   });
 
-program
-  .command("daemon")
+withRemoteOptions(program.command("daemon"))
   .description("Run the optional macOS hotkey daemon.")
-  .option("--host <host>", "SSH host alias", "vibeps")
   .option("--hijack-paste", "Intercept normal paste in allowlisted terminal apps")
-  .action(async (options: { host: string; hijackPaste?: boolean }) => {
-    const config = await loadConfig({ host: options.host });
+  .action(async (options: RemoteOptions & { hijackPaste?: boolean }) => {
+    const config = await loadRemoteConfig(options);
     await runDaemon(config, { hijackPaste: options.hijackPaste ?? config.daemon.hijackPaste });
   });
 
