@@ -24,7 +24,6 @@ REMOTE_HELPER_PATH="~/.local/bin/ssh-bin-paste-remote"
 CLEANUP_ENABLED="1"
 CLEANUP_MAX_AGE_SECONDS="86400"
 CLEANUP_INTERVAL_SECONDS="300"
-TARGET_PANE=""
 HIJACK_PASTE="0"
 
 usage() {
@@ -64,7 +63,6 @@ save_config() {
     write_config_value CLEANUP_ENABLED "$CLEANUP_ENABLED"
     write_config_value CLEANUP_MAX_AGE_SECONDS "$CLEANUP_MAX_AGE_SECONDS"
     write_config_value CLEANUP_INTERVAL_SECONDS "$CLEANUP_INTERVAL_SECONDS"
-    write_config_value TARGET_PANE "$TARGET_PANE"
     write_config_value HIJACK_PASTE "$HIJACK_PASTE"
   } > "$CONFIG_FILE"
 }
@@ -180,9 +178,6 @@ parse_remote_opts() {
     case "$1" in
       --host) HOST="$2"; shift 2 ;;
       --ssh) SSH_COMMAND="$2"; shift 2 ;;
-      --session) TMUX_SESSION="$2"; shift 2 ;;
-      --target) TARGET_ARG="$2"; shift 2 ;;
-      --max-age-seconds) MAX_AGE_ARG="$2"; shift 2 ;;
       --hijack-paste) HIJACK_PASTE="1"; shift ;;
       --*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
       *) EXTRA_ARG="$1"; shift ;;
@@ -258,7 +253,7 @@ check_line() {
   if [ "$ok" = "1" ]; then printf 'ok   %s: %s\n' "$label" "$detail"; else printf 'fail %s: %s\n' "$label" "$detail"; return 1; fi
 }
 
-cmd_doctor() {
+check_requirements() {
   load_config
   parse_remote_opts "$@"
   local ok=1 out codex_bin claude_bin codex_ok=0 claude_ok=0
@@ -307,7 +302,7 @@ esac
 EOF2
 }
 
-cmd_install_remote() {
+install_remote_helper() {
   load_config
   parse_remote_opts "$@"
   [ -f "$REMOTE_HELPER_ASSET" ] || { printf 'missing asset: %s\n' "$REMOTE_HELPER_ASSET" >&2; exit 1; }
@@ -365,7 +360,6 @@ resolve_target_pane() {
     run_remote_helper resolve-attach "$PAIR_ATTACH_ID"
     return
   fi
-  if [ -n "$TARGET_PANE" ]; then printf '%s\n' "$TARGET_PANE"; return; fi
   return 1
 }
 
@@ -386,14 +380,11 @@ json_field() {
 
 cmd_paste() {
   load_config
-  TARGET_ARG=""
   parse_remote_opts "$@"
-  if [ -z "${TARGET_ARG:-}" ]; then
-    load_pairing_target || {
-      printf 'No paired remote session. Keep ssh-bin-paste up running on your Mac, then run ssh-bin-paste attach on the VPS.\n' >&2
-      exit 1
-    }
-  fi
+  load_pairing_target || {
+    printf 'No paired remote session. Keep ssh-bin-paste up running on your Mac, then run ssh-bin-paste attach on the VPS.\n' >&2
+    exit 1
+  }
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
   local output_path capture local_path mime ext cache remote_path target now uuid
   output_path="$(mktemp -t ssh-bin-paste.XXXXXX).png"
@@ -406,7 +397,7 @@ cmd_paste() {
   uuid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
   run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
-  target="${TARGET_ARG:-$(resolve_target_pane)}"
+  target="$(resolve_target_pane)"
   [ -n "$target" ] || { printf 'Paired remote session is stale. Keep ssh-bin-paste up running, then run ssh-bin-paste attach again.\n' >&2; exit 1; }
   printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
   printf 'pasted %s into %s\n' "$remote_path" "$target"
@@ -432,7 +423,7 @@ up_pid_alive() {
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 
-cmd_up_start() {
+start_up_background() {
   load_config
   mkdir -p "$STATE_DIR"
   if up_pid_alive; then
@@ -451,14 +442,10 @@ cmd_up_start() {
 }
 
 cmd_config() {
-  case "${1:-}" in
-    --path) printf '%s\n' "$CONFIG_FILE"; return ;;
-    --print) load_config; cat "$CONFIG_FILE"; return ;;
-  esac
   run_config_wizard
-  cmd_doctor
-  cmd_install_remote
-  cmd_up_start || true
+  check_requirements
+  install_remote_helper
+  start_up_background || true
   printf '\nconfig complete\n'
 }
 

@@ -22,13 +22,9 @@ commands:
   resolve-attach <attach-id>
   remember-session <tmux-session>
   ensure-cache [cache-dir]
-  panes
   inject <target-pane>
-  cleanup [cache-dir] [max-age-seconds]
   cleanup-loop [cache-dir] [max-age-seconds] [interval-seconds]
   cleanup-start [cache-dir] [max-age-seconds] [interval-seconds]
-  cleanup-stop
-  cleanup-status
 EOF
 }
 
@@ -59,10 +55,6 @@ new_id() {
   else
     printf '%s-%s\n' "$(date +%s)" "$$"
   fi
-}
-
-list_panes() {
-  tmux list-panes -a -F '#{session_name}	#{window_index}.#{pane_index}	#{pane_id}	#{pane_pid}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true
 }
 
 remember_session() {
@@ -348,29 +340,6 @@ cleanup_start() {
   printf 'started pid=%s max_age=%s interval=%s\n' "$!" "$max_age" "$interval"
 }
 
-cleanup_stop() {
-  local pid
-  if ! cleanup_pid_alive; then
-    rm -f "$CLEANUP_PID_FILE"
-    printf 'not running\n'
-    return 0
-  fi
-
-  pid="$(cat "$CLEANUP_PID_FILE")"
-  kill "$pid" 2>/dev/null || true
-  rm -f "$CLEANUP_PID_FILE"
-  printf 'stopped pid=%s\n' "$pid"
-}
-
-cleanup_status() {
-  if cleanup_pid_alive; then
-    printf 'running pid=%s\n' "$(cat "$CLEANUP_PID_FILE")"
-  else
-    rm -f "$CLEANUP_PID_FILE"
-    printf 'not running\n'
-  fi
-}
-
 case "${1:-}" in
   version)
     printf '%s\n' "$VERSION"
@@ -397,16 +366,9 @@ case "${1:-}" in
     shift
     ensure_cache "${1:-}"
     ;;
-  panes)
-    list_panes
-    ;;
   inject)
     shift
     inject "${1:-}"
-    ;;
-  cleanup)
-    shift
-    cleanup "${1:-}" "${2:-}"
     ;;
   cleanup-loop)
     shift
@@ -415,12 +377,6 @@ case "${1:-}" in
   cleanup-start)
     shift
     cleanup_start "${1:-}" "${2:-}" "${3:-}"
-    ;;
-  cleanup-stop)
-    cleanup_stop
-    ;;
-  cleanup-status)
-    cleanup_status
     ;;
   *)
     usage
