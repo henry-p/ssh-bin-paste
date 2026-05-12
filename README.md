@@ -6,12 +6,16 @@ Paste images and other supported local clipboard payloads into remote Claude or 
 Keep using your normal SSH terminal.
 The tool attaches to a `tmux` session running `claude` or `codex` and pairs that terminal with your host.
 
+![ssh-bin-paste demo](docs/ssh-bin-paste-demo.gif)
+
 ## Quickstart
 
 ### 1. Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
+curl -fsSL \
+  https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh \
+  | bash
 ```
 
 ### 2. On the host, start the paste capture process
@@ -31,6 +35,10 @@ ssh-bin-paste attach
 
 Done! Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut.
 The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
+
+## Paste shortcut
+
+Press `Cmd+Shift+V` while your SSH terminal is focused; the host reads the clipboard payload, uploads it over SSH, and pastes the remote file path into the paired `tmux` agent session.
 
 ## Commands
 
