@@ -36,7 +36,7 @@ ssh-bin-paste up
 ## Requirements
 
 - Host: macOS.
-- Swift or Apple Command Line Tools for the current macOS helper.
+- Host: macOS with Swift available, usually via Apple Command Line Tools.
 - SSH access to the remote.
 - Remote: `tmux`.
 - Remote: Claude Code and/or Codex.
