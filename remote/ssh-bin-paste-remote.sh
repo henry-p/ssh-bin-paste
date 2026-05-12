@@ -137,7 +137,7 @@ resolve_attach() {
 
   local record="$ATTACH_DIR/$attach_id"
   if [ ! -f "$record" ]; then
-    printf 'stale attachment. Keep ssh-bin-paste up running on your Mac and run ssh-bin-paste attach on the VPS again.\n' >&2
+    printf 'stale attachment. Keep ssh-bin-paste up running on your host and run ssh-bin-paste attach on the remote again.\n' >&2
     return 1
   fi
 
@@ -161,7 +161,7 @@ resolve_attach() {
     pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{pane_id}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
   fi
   if [ -z "$pane" ]; then
-    printf 'paired tmux client is not attached. Re-run ssh-bin-paste attach on the VPS.\n' >&2
+    printf 'paired tmux client is not attached. Re-run ssh-bin-paste attach on the remote.\n' >&2
     return 1
   fi
 
@@ -275,7 +275,7 @@ attach_tmux() {
   fi
   write_attach_record "$attach_id" "$target" "$tty_name"
   write_pairing_request "$attach_id" "$target"
-  printf 'Pairing request created. If your Mac is running ssh-bin-paste up, it will use this tmux attachment.\n'
+  printf 'Pairing request created. If your host is running ssh-bin-paste up, it will use this tmux attachment.\n'
 
   exec tmux attach-session -t "$target"
 }

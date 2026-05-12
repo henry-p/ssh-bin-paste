@@ -167,7 +167,7 @@ guard let command = valueAfter("--command") else {
     exit(2)
 }
 
-let host = valueAfter("--host") ?? "example-vps"
+let host = valueAfter("--host") ?? "example-remote"
 let sshCommand = valueAfter("--ssh")
 let apps = Set((valueAfter("--allowlisted-apps") ?? "").split(separator: ",").map(String.init))
 config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)

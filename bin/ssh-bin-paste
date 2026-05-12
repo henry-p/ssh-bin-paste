@@ -14,7 +14,7 @@ LOCAL_UP_PID="$STATE_DIR/local-up.pid"
 LOCAL_UP_LOG="$STATE_DIR/local-up.log"
 PAIRING_FILE="$STATE_DIR/current-pairing"
 
-HOST="example-vps"
+HOST="example-remote"
 SSH_COMMAND=""
 AGENT_CODEX_COMMAND="codex"
 AGENT_CLAUDE_COMMAND="claude"
@@ -381,7 +381,7 @@ cmd_paste() {
   load_config
   parse_remote_opts "$@"
   load_pairing_target || {
-    printf 'No paired remote session. Keep ssh-bin-paste up running on your Mac, then run ssh-bin-paste attach on the VPS.\n' >&2
+      printf 'No paired remote session. Keep ssh-bin-paste up running on your host, then run ssh-bin-paste attach on the remote.\n' >&2
     exit 1
   }
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
