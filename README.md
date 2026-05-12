@@ -13,22 +13,22 @@ curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/script
 Then start an agent:
 
 ```sh
-ssh-bin-paste start --host vibeps --agent codex
+ssh-bin-paste start --host example-vps --agent codex
 
 # Copy an image on your Mac, then:
-ssh-bin-paste paste --host vibeps
+ssh-bin-paste paste --host example-vps
 ```
 
 For Claude Code:
 
 ```sh
-ssh-bin-paste start --host vibeps --agent claude
+ssh-bin-paste start --host example-vps --agent claude
 ```
 
 Attach to the managed remote session from your normal SSH client:
 
 ```sh
-ssh -t vibeps 'tmux attach -t agent'
+ssh -t example-vps 'tmux attach -t agent'
 ```
 
 ## Requirements
@@ -44,7 +44,7 @@ Install options:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
-  SSH_BIN_PASTE_HOST=vibeps SSH_BIN_PASTE_AGENT=claude bash
+  SSH_BIN_PASTE_HOST=example-vps SSH_BIN_PASTE_AGENT=claude bash
 
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
   SSH_BIN_PASTE_SSH='ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' bash
@@ -63,23 +63,23 @@ No remote server is installed. `install-remote` installs a tiny helper script th
 ## Commands
 
 ```sh
-ssh-bin-paste doctor --host vibeps --agent codex
+ssh-bin-paste doctor --host example-vps --agent codex
 ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
-ssh-bin-paste install-remote --host vibeps
+ssh-bin-paste install-remote --host example-vps
 ssh-bin-paste install-remote --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
-ssh-bin-paste start --host vibeps --agent codex
+ssh-bin-paste start --host example-vps --agent codex
 ssh-bin-paste start --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
-ssh-bin-paste start --host vibeps --agent claude
-ssh-bin-paste panes --host vibeps
-ssh-bin-paste panes --host vibeps --select
-ssh-bin-paste paste --host vibeps
+ssh-bin-paste start --host example-vps --agent claude
+ssh-bin-paste panes --host example-vps
+ssh-bin-paste panes --host example-vps --select
+ssh-bin-paste paste --host example-vps
 ssh-bin-paste paste --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
-ssh-bin-paste cleanup --host vibeps
-ssh-bin-paste cleanup-daemon status --host vibeps
-ssh-bin-paste cleanup-daemon stop --host vibeps
-ssh-bin-paste cleanup-daemon start --host vibeps
-ssh-bin-paste daemon --host vibeps
-ssh-bin-paste daemon --host vibeps --hijack-paste
+ssh-bin-paste cleanup --host example-vps
+ssh-bin-paste cleanup-daemon status --host example-vps
+ssh-bin-paste cleanup-daemon stop --host example-vps
+ssh-bin-paste cleanup-daemon start --host example-vps
+ssh-bin-paste daemon --host example-vps
+ssh-bin-paste daemon --host example-vps --hijack-paste
 ```
 
 `paste` requires the remote agent to be running inside `tmux`. Direct SSH PTYs cannot be reliably injected from a sidecar process.
@@ -96,7 +96,7 @@ Default profile shape:
 
 ```json
 {
-  "host": "vibeps",
+  "host": "example-vps",
   "sshCommand": "ssh -i ~/.ssh/example_ed25519 root@203.0.113.10",
   "tmuxSession": "agent",
   "remoteCacheDir": "~/.cache/ssh-bin-paste/images",

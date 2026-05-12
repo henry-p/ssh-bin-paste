@@ -31,7 +31,7 @@ describe("parseShellWords", () => {
 
 describe("sshArgs", () => {
   it("uses host aliases directly", () => {
-    expect(sshArgs("vibeps", "printf ok")).toEqual(["ssh", "vibeps", "printf ok"]);
+    expect(sshArgs("example-vps", "printf ok")).toEqual(["ssh", "example-vps", "printf ok"]);
   });
 
   it("appends remote command to full ssh commands", () => {

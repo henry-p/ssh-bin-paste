@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_URL="${SSH_BIN_PASTE_REPO:-git@github.com:henry-p/ssh-bin-paste.git}"
 INSTALL_DIR="${SSH_BIN_PASTE_DIR:-$HOME/coding/private/ssh-bin-paste}"
 BRANCH="${SSH_BIN_PASTE_BRANCH:-master}"
-HOST="${SSH_BIN_PASTE_HOST:-vibeps}"
+HOST="${SSH_BIN_PASTE_HOST:-example-vps}"
 SSH_COMMAND="${SSH_BIN_PASTE_SSH:-}"
 AGENT="${SSH_BIN_PASTE_AGENT:-codex}"
 SKIP_REMOTE="${SSH_BIN_PASTE_SKIP_REMOTE:-0}"

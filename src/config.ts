@@ -32,7 +32,7 @@ export interface ConfigOverrides {
 }
 
 const DEFAULT_CONFIG: AppConfig = {
-  host: "vibeps",
+  host: "example-vps",
   tmuxSession: "agent",
   remoteCacheDir: "~/.cache/ssh-bin-paste/images",
   remoteHelperPath: "~/.local/bin/ssh-bin-paste-remote",

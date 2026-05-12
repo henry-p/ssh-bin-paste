@@ -18,7 +18,7 @@ interface RemoteOptions {
 
 function withRemoteOptions(command: Command): Command {
   return command
-    .option("--host <host>", "SSH host alias", "vibeps")
+    .option("--host <host>", "SSH host alias", "example-vps")
     .option("--ssh <command>", "Full SSH command, for example: ssh -i ~/.ssh/key user@host");
 }
 
