@@ -31,7 +31,7 @@ export interface ConfigOverrides {
   sshCommand?: string;
 }
 
-const DEFAULT_CONFIG: AppConfig = {
+export const DEFAULT_CONFIG: AppConfig = {
   host: "example-vps",
   tmuxSession: "agent",
   remoteCacheDir: "~/.cache/ssh-bin-paste/images",
@@ -108,6 +108,19 @@ export async function saveConfigPatch(patch: Partial<AppConfig>): Promise<AppCon
   await mkdir(dirname(configPath()), { recursive: true });
   await writeFile(configPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return loadConfig();
+}
+
+export async function ensureConfigFile(): Promise<string> {
+  try {
+    await readFile(configPath(), "utf8");
+  } catch (error) {
+    if (!isMissingFile(error)) {
+      throw new Error(`Failed to read ${configPath()}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await mkdir(dirname(configPath()), { recursive: true });
+    await writeFile(configPath(), `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, "utf8");
+  }
+  return configPath();
 }
 
 export function resolveAgentCommand(config: AppConfig, agent: string): string {

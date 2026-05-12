@@ -64,6 +64,7 @@ No remote server is installed. `install-remote` installs a tiny helper script th
 
 ```sh
 ssh-bin-paste doctor --host example-vps --agent codex
+ssh-bin-paste config
 ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
 ssh-bin-paste install-remote --host example-vps
 ssh-bin-paste install-remote --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
@@ -92,25 +93,6 @@ Config is optional and lives at:
 ~/.config/ssh-bin-paste/config.json
 ```
 
-Default profile shape:
-
-```json
-{
-  "host": "example-vps",
-  "sshCommand": "ssh -i ~/.ssh/example_ed25519 root@203.0.113.10",
-  "tmuxSession": "agent",
-  "remoteCacheDir": "~/.cache/ssh-bin-paste/images",
-  "remoteHelperPath": "~/.local/bin/ssh-bin-paste-remote",
-  "cleanupDaemon": {
-    "enabled": true,
-    "maxAgeSeconds": 86400,
-    "intervalSeconds": 300
-  },
-  "agents": {
-    "codex": { "command": "codex" },
-    "claude": { "command": "claude" }
-  }
-}
-```
+Run `ssh-bin-paste config` to open the config helper; it creates and edits this file. Use `ssh-bin-paste config --path` to print the path without opening an editor.
 
 Use `panes --select` if you want to adopt an existing `tmux` pane instead of the managed session.

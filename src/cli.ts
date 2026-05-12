@@ -8,6 +8,7 @@ import { listPanes, printPanes, selectAndSavePane } from "./panes.js";
 import { pasteClipboardImage } from "./paste.js";
 import { startManagedAgent } from "./start.js";
 import { runDaemon } from "./daemon.js";
+import { runConfigCommand } from "./config-command.js";
 
 const program = new Command();
 
@@ -30,6 +31,15 @@ program
   .name("ssh-bin-paste")
   .description("Paste local clipboard images into remote terminal agents over SSH.")
   .version("0.1.0");
+
+program
+  .command("config")
+  .description("Open the config helper.")
+  .option("--path", "Print the config file path without opening it")
+  .option("--editor <command>", "Editor command to use")
+  .action(async (options: { path?: boolean; editor?: string }) => {
+    await runConfigCommand(options);
+  });
 
 withRemoteOptions(program.command("doctor"))
   .description("Check local and remote prerequisites.")
