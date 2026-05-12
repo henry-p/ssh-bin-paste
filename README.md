@@ -14,19 +14,14 @@ Images are the main supported clipboard payload today. The bridge is file-based,
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-Then start an agent:
+Then start either Codex or Claude Code:
 
 ```sh
 ssh-bin-paste start --host example-vps --agent codex
+ssh-bin-paste start --host example-vps --agent claude
 
 # Copy a supported file or image on your Mac, then:
 ssh-bin-paste paste --host example-vps
-```
-
-For Claude Code:
-
-```sh
-ssh-bin-paste start --host example-vps --agent claude
 ```
 
 Attach to the managed remote session from your normal SSH client:
@@ -55,16 +50,19 @@ No remote server is installed. `install-remote` installs a tiny helper script th
 
 ```sh
 ssh-bin-paste doctor --host example-vps --agent codex
+ssh-bin-paste doctor --host example-vps --agent claude
 ssh-bin-paste config
 ssh-bin-paste doctor
 ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
+ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent claude
 ssh-bin-paste install-remote --host example-vps
 ssh-bin-paste install-remote
 ssh-bin-paste install-remote --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
 ssh-bin-paste start --host example-vps --agent codex
+ssh-bin-paste start --host example-vps --agent claude
 ssh-bin-paste start
 ssh-bin-paste start --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
-ssh-bin-paste start --host example-vps --agent claude
+ssh-bin-paste start --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent claude
 ssh-bin-paste panes --host example-vps
 ssh-bin-paste panes --host example-vps --select
 ssh-bin-paste paste --host example-vps
