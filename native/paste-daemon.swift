@@ -24,7 +24,7 @@ func flagPresent(_ name: String) -> Bool {
     CommandLine.arguments.contains(name)
 }
 
-func clipboardHasImage() -> Bool {
+func clipboardHasSupportedPayload() -> Bool {
     let pasteboard = NSPasteboard.general
     if pasteboard.data(forType: NSPasteboard.PasteboardType("public.png")) != nil {
         return true
@@ -80,7 +80,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 
     let dedicatedShortcut = isCommandShiftV(event)
     let hijackedPaste = config.hijackPaste && frontmostAppIsAllowed() && isPlainPaste(event)
-    if (dedicatedShortcut || hijackedPaste) && clipboardHasImage() {
+    if (dedicatedShortcut || hijackedPaste) && clipboardHasSupportedPayload() {
         runPasteCommand()
         return nil
     }
@@ -114,5 +114,5 @@ guard let tap = CGEvent.tapCreate(
 let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
 CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
 CGEvent.tapEnable(tap: tap, enable: true)
-print("ssh-bin-paste daemon running. Cmd+Shift+V pastes clipboard images; paste hijack is \(config.hijackPaste ? "on" : "off").")
+print("ssh-bin-paste daemon running. Cmd+Shift+V pastes supported clipboard payloads; paste hijack is \(config.hijackPaste ? "on" : "off").")
 CFRunLoopRun()

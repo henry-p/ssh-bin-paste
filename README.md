@@ -1,10 +1,12 @@
 # ssh-bin-paste
 
-Paste local clipboard images into remote terminal agents over SSH.
+Paste supported binary clipboard payloads into remote terminal agents over SSH.
 
 The core CLI is written in Rust, keeping the tool fast and resource-light enough for tiny VPS servers.
 
-`ssh-bin-paste` keeps your normal SSH client in the loop. It captures an image from your Mac clipboard, uploads it to a remote host, and pastes the remote file path into an agent running inside `tmux`.
+`ssh-bin-paste` keeps your normal SSH client in the loop. It captures a supported binary payload from your Mac clipboard, uploads it to a remote host, and pastes the remote file path into an agent running inside `tmux`.
+
+Images are the main supported clipboard payload today. The bridge is file-based, so every supported binary file type follows the same upload-and-paste path.
 
 ## Quickstart
 
@@ -17,7 +19,7 @@ Then start an agent:
 ```sh
 ssh-bin-paste start --host example-vps --agent codex
 
-# Copy an image on your Mac, then:
+# Copy a supported file or image on your Mac, then:
 ssh-bin-paste paste --host example-vps
 ```
 

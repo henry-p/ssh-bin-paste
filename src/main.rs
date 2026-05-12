@@ -5,15 +5,15 @@ use ssh_bin_paste::config_command::run_config_command;
 use ssh_bin_paste::daemon::run_daemon;
 use ssh_bin_paste::doctor::run_doctor;
 use ssh_bin_paste::panes::{list_panes, print_panes, select_and_save_pane};
-use ssh_bin_paste::paste::paste_clipboard_image;
-use ssh_bin_paste::remote_cache::{cleanup_remote_images, remote_cleanup_daemon};
+use ssh_bin_paste::paste::paste_clipboard_payload;
+use ssh_bin_paste::remote_cache::{cleanup_remote_files, remote_cleanup_daemon};
 use ssh_bin_paste::remote_install::{InstallRemoteOptions, install_remote_helper};
 use ssh_bin_paste::start::start_managed_agent;
 
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "Paste local clipboard images into remote terminal agents over SSH."
+    about = "Paste supported binary clipboard payloads into remote terminal agents over SSH."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -116,7 +116,7 @@ struct CleanupArgs {
     #[arg(
         long,
         default_value_t = 86_400,
-        help = "Delete images older than this many seconds"
+        help = "Delete cached files older than this many seconds"
     )]
     max_age_seconds: u64,
 }
@@ -191,11 +191,11 @@ fn run() -> Result<()> {
         }
         Commands::Paste(args) => {
             let config = args.remote.load_config()?;
-            paste_clipboard_image(&config, args.target.as_deref())
+            paste_clipboard_payload(&config, args.target.as_deref())
         }
         Commands::Cleanup(args) => {
             let config = args.remote.load_config()?;
-            cleanup_remote_images(&config, args.max_age_seconds)
+            cleanup_remote_files(&config, args.max_age_seconds)
         }
         Commands::CleanupDaemon(args) => {
             let config = args.remote.load_config()?;

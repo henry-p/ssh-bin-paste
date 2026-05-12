@@ -2,7 +2,7 @@
 set -euo pipefail
 
 VERSION="0.1.0"
-DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/images}"
+DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/files}"
 STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
 DAEMON_PID_FILE="$STATE_DIR/cleanup-daemon.pid"
 DAEMON_LOG_FILE="$STATE_DIR/cleanup-daemon.log"

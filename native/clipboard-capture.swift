@@ -59,7 +59,7 @@ if let png = pasteboard.data(forType: pngType) {
 }
 
 guard let png = data else {
-    fail("No image found on the clipboard")
+    fail("No supported clipboard payload found. Images are currently supported.")
 }
 
 let url = URL(fileURLWithPath: outputPath)
@@ -71,6 +71,5 @@ do {
     FileHandle.standardOutput.write(encoded)
     FileHandle.standardOutput.write(Data("\n".utf8))
 } catch {
-    fail("Failed to write clipboard image: \(error.localizedDescription)")
+    fail("Failed to write clipboard payload: \(error.localizedDescription)")
 }
-

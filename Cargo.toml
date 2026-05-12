@@ -2,7 +2,7 @@
 name = "ssh-bin-paste"
 version = "0.1.0"
 edition = "2024"
-description = "Paste local clipboard images into remote terminal agents over SSH."
+description = "Paste supported binary clipboard payloads into remote terminal agents over SSH."
 license = "MIT"
 
 [dependencies]

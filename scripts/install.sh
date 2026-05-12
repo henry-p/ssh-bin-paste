@@ -155,6 +155,6 @@ Start an agent:
 Attach from your SSH client:
   use the attach command printed by ssh-bin-paste start
 
-Paste an image after copying it locally:
+Paste a supported file after copying it locally:
   $BIN paste
 EOF

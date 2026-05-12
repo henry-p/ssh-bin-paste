@@ -114,7 +114,7 @@ fn run_wizard(
     config.remote_cache_dir = prompt_string_validated(
         input,
         output,
-        "Remote image cache dir",
+        "Remote file cache dir",
         &config.remote_cache_dir,
         validate_non_empty,
     )?;
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn wizard_updates_config_from_answers() {
         let mut config = AppConfig::default();
-        let answers = b"2\nssh user@example.test\nclaude\nclaude --model sonnet\nwork\n/tmp/images\n~/.local/bin/helper\ny\n3600\n60\ny\n";
+        let answers = b"2\nssh user@example.test\nclaude\nclaude --model sonnet\nwork\n/tmp/files\n~/.local/bin/helper\ny\n3600\n60\ny\n";
         let mut input = BufReader::new(Cursor::new(&answers[..]));
         let mut output = Vec::new();
 
@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(config.default_agent, "claude");
         assert_eq!(config.agents["claude"].command, "claude --model sonnet");
         assert_eq!(config.tmux_session, "work");
-        assert_eq!(config.remote_cache_dir, "/tmp/images");
+        assert_eq!(config.remote_cache_dir, "/tmp/files");
         assert_eq!(config.cleanup_daemon.max_age_seconds, 3600);
         assert_eq!(config.cleanup_daemon.interval_seconds, 60);
         assert!(config.daemon.hijack_paste);
@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn wizard_reprompts_invalid_ssh_target() {
         let mut config = AppConfig::default();
-        let answers = b"1\nssh user@example.test\nexample-vps\ncodex\ncodex\nagent\n~/.cache/ssh-bin-paste/images\n~/.local/bin/ssh-bin-paste-remote\ny\n86400\n300\nn\n";
+        let answers = b"1\nssh user@example.test\nexample-vps\ncodex\ncodex\nagent\n~/.cache/ssh-bin-paste/files\n~/.local/bin/ssh-bin-paste-remote\ny\n86400\n300\nn\n";
         let mut input = BufReader::new(Cursor::new(&answers[..]));
         let mut output = Vec::new();
 

@@ -1,14 +1,14 @@
 use anyhow::{Result, bail};
 
-use crate::clipboard::capture_clipboard_image;
+use crate::clipboard::capture_clipboard_payload;
 use crate::config::AppConfig;
 use crate::panes::resolve_target_pane;
-use crate::remote_cache::upload_image;
+use crate::remote_cache::upload_payload;
 use crate::remote_helper::run_remote_helper;
 
-pub fn paste_clipboard_image(config: &AppConfig, target_pane: Option<&str>) -> Result<()> {
-    let image = capture_clipboard_image()?;
-    let remote_path = upload_image(config, &image)?;
+pub fn paste_clipboard_payload(config: &AppConfig, target_pane: Option<&str>) -> Result<()> {
+    let payload = capture_clipboard_payload()?;
+    let remote_path = upload_payload(config, &payload)?;
     let target = match target_pane {
         Some(target) => target.to_string(),
         None => resolve_target_pane(config)?,

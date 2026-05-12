@@ -3,14 +3,14 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-use crate::clipboard::CapturedImage;
+use crate::clipboard::CapturedPayload;
 use crate::config::AppConfig;
 use crate::remote_helper::run_remote_helper;
 use crate::ssh::{run_ssh, shell_quote, target_label};
 
-pub fn upload_image(config: &AppConfig, image: &CapturedImage) -> Result<String> {
+pub fn upload_payload(config: &AppConfig, payload: &CapturedPayload) -> Result<String> {
     let cache_dir = ensure_remote_cache(config)?;
-    let ext = extension_for_mime(&image.mime_type);
+    let ext = extension_for_mime(&payload.mime_type);
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
     let remote_path = format!(
         "{}/ssh-bin-paste-{}-{}.{}",
@@ -19,7 +19,7 @@ pub fn upload_image(config: &AppConfig, image: &CapturedImage) -> Result<String>
         Uuid::new_v4(),
         ext
     );
-    let data = fs::read(&image.path)?;
+    let data = fs::read(&payload.path)?;
     let result = run_ssh(
         config,
         &format!(
@@ -30,12 +30,12 @@ pub fn upload_image(config: &AppConfig, image: &CapturedImage) -> Result<String>
         Some(&data),
     )?;
     if result.exit_code != 0 {
-        bail!("failed to upload image: {}", result.stderr.trim());
+        bail!("failed to upload file: {}", result.stderr.trim());
     }
     Ok(remote_path)
 }
 
-pub fn cleanup_remote_images(config: &AppConfig, max_age_seconds: u64) -> Result<()> {
+pub fn cleanup_remote_files(config: &AppConfig, max_age_seconds: u64) -> Result<()> {
     let seconds = if max_age_seconds > 0 {
         max_age_seconds
     } else {
@@ -54,7 +54,7 @@ pub fn cleanup_remote_images(config: &AppConfig, max_age_seconds: u64) -> Result
         bail!("remote cleanup failed: {}", result.stderr.trim());
     }
     println!(
-        "cleaned images older than {seconds}s on {}",
+        "cleaned files older than {seconds}s on {}",
         target_label(config)
     );
     Ok(())

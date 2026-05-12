@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub const REMOTE_HELPER: &str = include_str!("../remote/ssh-bin-paste-remote.sh");
-pub const CLIPBOARD_IMAGE_SWIFT: &str = include_str!("../native/clipboard-image.swift");
+pub const CLIPBOARD_CAPTURE_SWIFT: &str = include_str!("../native/clipboard-capture.swift");
 pub const PASTE_DAEMON_SWIFT: &str = include_str!("../native/paste-daemon.swift");
 
 pub fn write_temp_asset(name: &str, contents: &str) -> Result<PathBuf> {
