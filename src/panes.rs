@@ -145,9 +145,6 @@ fn score_pane(session_name: &str, command: &str, title: &str) -> u32 {
     if haystack.contains("agent") {
         score += 2;
     }
-    if command == "node" {
-        score += 1;
-    }
     score
 }
 
@@ -169,11 +166,10 @@ mod tests {
 
     #[test]
     fn parses_tmux_pane_format_and_scores_likely_agents() {
-        let pane = parse_pane_line("agent\t0.0\t%4\t1234\tnode\t/root\tcodex");
+        let pane = parse_pane_line("agent\t0.0\t%4\t1234\tcodex\t/root\tcodex");
         assert_eq!(pane.session_name, "agent");
         assert_eq!(pane.window_pane, "0.0");
         assert_eq!(pane.pane_id, "%4");
         assert!(pane.score > 0);
     }
 }
-
