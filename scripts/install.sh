@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${SSH_BIN_PASTE_REPO:-https://github.com/henry-p/ssh-bin-paste.git}"
-BRANCH="${SSH_BIN_PASTE_BRANCH:-master}"
-DEFAULT_INSTALL_DIR="~/coding/private/ssh-bin-paste"
-DEFAULT_BIN_DIR="~/.local/bin"
+BASE_URL="${SSH_BIN_PASTE_BASE_URL:-https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master}"
+BIN_DIR="${SSH_BIN_PASTE_BIN_DIR:-$HOME/.local/bin}"
+ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
+SKIP_SETUP="${SSH_BIN_PASTE_SKIP_SETUP:-0}"
 
 log() {
   printf '==> %s\n' "$*"
@@ -17,136 +17,50 @@ need() {
   fi
 }
 
-remote_label() {
-  "$BIN" config --print | awk -F'"' '
-    /"sshCommand":/ { ssh_command = $4 }
-    /"host":/ { host = $4 }
-    END {
-      if (ssh_command != "") print ssh_command
-      else if (host != "") print host
-      else print "saved config"
-    }
-  '
+download() {
+  local url="$1" dest="$2"
+  curl -fsSL "$url" -o "$dest"
 }
 
-prompt() {
-  local label="$1"
-  local default="$2"
-  local answer
-  while true; do
-    printf '%s [%s]: ' "$label" "$default" >/dev/tty
-    IFS= read -r answer </dev/tty
-    answer="${answer:-$default}"
-    if [ -n "$answer" ]; then
-      printf '%s\n' "$answer"
-      return 0
-    fi
-    printf 'Please enter a value.\n' >/dev/tty
-  done
-}
-
-prompt_yes_no() {
-  local label="$1"
-  local default="$2"
-  local answer prompt_label
-  if [ "$default" = "y" ]; then
-    prompt_label="Y/n"
-  else
-    prompt_label="y/N"
-  fi
-  while true; do
-    printf '%s [%s]: ' "$label" "$prompt_label" >/dev/tty
-    IFS= read -r answer </dev/tty
-    answer="${answer:-$default}"
-    case "$answer" in
-      y|Y|yes|YES) return 0 ;;
-      n|N|no|NO) return 1 ;;
-      *) printf 'Please answer yes or no.\n' >/dev/tty ;;
-    esac
-  done
-}
-
-expand_tilde() {
-  case "$1" in
-    "~") printf '%s\n' "$HOME" ;;
-    "~/"*) printf '%s/%s\n' "$HOME" "${1#~/}" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
-need git
-need cargo
+need curl
 need ssh
 need swift
 
-if [ ! -r /dev/tty ]; then
-  printf 'interactive install requires a terminal\n' >&2
-  exit 1
-fi
-
-cat >/dev/tty <<EOF
-ssh-bin-paste installer
-
-Press Enter to accept defaults. Remote SSH and agent settings are configured by
-the shared ssh-bin-paste config wizard after the CLI is installed.
-
-EOF
-
-INSTALL_DIR_INPUT="$(prompt "Install directory" "$DEFAULT_INSTALL_DIR")"
-BIN_DIR_INPUT="$(prompt "Binary directory" "$DEFAULT_BIN_DIR")"
-INSTALL_DIR="$(expand_tilde "$INSTALL_DIR_INPUT")"
-BIN_DIR="$(expand_tilde "$BIN_DIR_INPUT")"
-
-if [ -d "$INSTALL_DIR/.git" ]; then
-  log "updating $INSTALL_DIR"
-  if ! git -C "$INSTALL_DIR" diff --quiet; then
-    if prompt_yes_no "Existing checkout has uncommitted changes. Build it without updating" "n"; then
-      log "building existing checkout without git update"
-    else
-      printf 'aborting because %s has uncommitted changes\n' "$INSTALL_DIR" >&2
-      exit 1
-    fi
-  else
-    git -C "$INSTALL_DIR" fetch origin
-    git -C "$INSTALL_DIR" checkout "$BRANCH"
-    git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
-  fi
-else
-  log "cloning $REPO_URL to $INSTALL_DIR"
-  mkdir -p "$(dirname "$INSTALL_DIR")"
-  git clone "$REPO_URL" "$INSTALL_DIR"
-fi
-
-cd "$INSTALL_DIR"
-
-log "building Rust CLI"
-cargo build --release
+mkdir -p "$BIN_DIR" "$ASSET_DIR"
 
 log "installing ssh-bin-paste to $BIN_DIR"
-mkdir -p "$BIN_DIR"
-install -m 0755 target/release/ssh-bin-paste "$BIN_DIR/ssh-bin-paste"
-BIN="$BIN_DIR/ssh-bin-paste"
+download "$BASE_URL/bin/ssh-bin-paste" "$BIN_DIR/ssh-bin-paste"
+chmod 0755 "$BIN_DIR/ssh-bin-paste"
 
-if ! command -v ssh-bin-paste >/dev/null 2>&1; then
-  log "add $BIN_DIR to PATH to run ssh-bin-paste without the full path"
+log "installing runtime helpers to $ASSET_DIR"
+download "$BASE_URL/remote/ssh-bin-paste-remote.sh" "$ASSET_DIR/ssh-bin-paste-remote.sh"
+download "$BASE_URL/native/clipboard-capture.swift" "$ASSET_DIR/clipboard-capture.swift"
+download "$BASE_URL/native/paste-daemon.swift" "$ASSET_DIR/paste-daemon.swift"
+chmod 0644 "$ASSET_DIR/clipboard-capture.swift" "$ASSET_DIR/paste-daemon.swift"
+chmod 0755 "$ASSET_DIR/ssh-bin-paste-remote.sh"
+
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *)
+    log "add $BIN_DIR to PATH to run ssh-bin-paste without the full path"
+    ;;
+esac
+
+if [ "$SKIP_SETUP" != "1" ]; then
+  log "running setup"
+  "$BIN_DIR/ssh-bin-paste" setup
 fi
 
-log "running setup"
-"$BIN" setup </dev/tty >/dev/tty
-
-cat <<EOF
+cat <<EOF2
 
 ssh-bin-paste installed.
 
 Start Codex:
-  $BIN start codex
+  ssh-bin-paste start codex
 
 Start Claude Code:
-  $BIN start claude
+  ssh-bin-paste start claude
 
-Attach from your SSH client:
-  ssh into your VPS, then run: ssh-bin-paste attach
-
-Paste a supported file after copying it locally:
-  $BIN paste
-EOF
+After connecting to your VPS:
+  ssh-bin-paste attach
+EOF2

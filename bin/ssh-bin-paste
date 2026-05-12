@@ -1,0 +1,508 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ssh-bin-paste"
+CONFIG_FILE="$CONFIG_DIR/config.sh"
+CACHE_DIR="$HOME/.cache/ssh-bin-paste"
+STATE_DIR="$CACHE_DIR"
+ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
+REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
+CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
+PASTE_DAEMON="$ASSET_DIR/paste-daemon.swift"
+LOCAL_DAEMON_PID="$STATE_DIR/local-daemon.pid"
+LOCAL_DAEMON_LOG="$STATE_DIR/local-daemon.log"
+
+HOST="example-vps"
+SSH_COMMAND=""
+DEFAULT_AGENT="codex"
+AGENT_CODEX_COMMAND="codex"
+AGENT_CLAUDE_COMMAND="claude"
+TMUX_SESSION="agent"
+REMOTE_CACHE_DIR="~/.cache/ssh-bin-paste/files"
+REMOTE_HELPER_PATH="~/.local/bin/ssh-bin-paste-remote"
+CLEANUP_ENABLED="1"
+CLEANUP_MAX_AGE_SECONDS="86400"
+CLEANUP_INTERVAL_SECONDS="300"
+TARGET_PANE=""
+HIJACK_PASTE="0"
+
+usage() {
+  cat <<'USAGE'
+usage: ssh-bin-paste <command> [args]
+
+commands:
+  setup              configure SSH, install the remote helper, and start the paste shortcut
+  start [agent]      start Codex, Claude Code, or another agent in remote tmux
+  paste              upload the local clipboard payload and inject it into the agent pane
+  daemon             run the macOS paste shortcut listener in the foreground
+  daemon-start       start the paste shortcut listener in the background
+  doctor             check local and remote requirements
+  install-remote     install the remote helper and attach command
+  panes              list remote tmux panes
+  cleanup            clean old remote cached files
+  cleanup-daemon     start, stop, or inspect remote cache cleanup
+  config             run the config wizard, or print config with --path/--print
+  version            print version
+USAGE
+}
+
+shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\''/g")"
+}
+
+write_config_value() {
+  local key="$1" value="$2"
+  printf '%s=' "$key"
+  shell_quote "$value"
+  printf '\n'
+}
+
+save_config() {
+  mkdir -p "$CONFIG_DIR"
+  {
+    printf '# ssh-bin-paste config\n'
+    write_config_value HOST "$HOST"
+    write_config_value SSH_COMMAND "$SSH_COMMAND"
+    write_config_value DEFAULT_AGENT "$DEFAULT_AGENT"
+    write_config_value AGENT_CODEX_COMMAND "$AGENT_CODEX_COMMAND"
+    write_config_value AGENT_CLAUDE_COMMAND "$AGENT_CLAUDE_COMMAND"
+    write_config_value TMUX_SESSION "$TMUX_SESSION"
+    write_config_value REMOTE_CACHE_DIR "$REMOTE_CACHE_DIR"
+    write_config_value REMOTE_HELPER_PATH "$REMOTE_HELPER_PATH"
+    write_config_value CLEANUP_ENABLED "$CLEANUP_ENABLED"
+    write_config_value CLEANUP_MAX_AGE_SECONDS "$CLEANUP_MAX_AGE_SECONDS"
+    write_config_value CLEANUP_INTERVAL_SECONDS "$CLEANUP_INTERVAL_SECONDS"
+    write_config_value TARGET_PANE "$TARGET_PANE"
+    write_config_value HIJACK_PASTE "$HIJACK_PASTE"
+  } > "$CONFIG_FILE"
+}
+
+load_config() {
+  if [ -f "$CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+  fi
+}
+
+prompt() {
+  local label="$1" default="$2" answer
+  while true; do
+    printf '%s [%s]: ' "$label" "$default" >/dev/tty
+    IFS= read -r answer </dev/tty
+    answer="${answer:-$default}"
+    if [ -n "$answer" ]; then
+      printf '%s\n' "$answer"
+      return 0
+    fi
+    printf 'Please enter a value.\n' >/dev/tty
+  done
+}
+
+prompt_yes_no() {
+  local label="$1" default="$2" answer prompt_label
+  if [ "$default" = "1" ]; then prompt_label="Y/n"; else prompt_label="y/N"; fi
+  while true; do
+    printf '%s [%s]: ' "$label" "$prompt_label" >/dev/tty
+    IFS= read -r answer </dev/tty
+    case "${answer:-$default}" in
+      1|y|Y|yes|YES) return 0 ;;
+      0|n|N|no|NO) return 1 ;;
+      *) printf 'Please answer yes or no.\n' >/dev/tty ;;
+    esac
+  done
+}
+
+validate_host_alias() {
+  case "$1" in ssh\ *) return 1 ;; esac
+  [ "$(printf '%s' "$1" | wc -w | tr -d ' ')" = "1" ]
+}
+
+validate_ssh_command() {
+  case "$1" in ssh\ *|*/ssh\ *) return 0 ;; *) return 1 ;; esac
+}
+
+run_config_wizard() {
+  load_config
+  mkdir -p "$CONFIG_DIR"
+  printf 'ssh-bin-paste setup\n\n' >/dev/tty
+  printf 'Remote target:\n  1. SSH config host alias\n  2. Full SSH command\n' >/dev/tty
+  local default_mode="1" mode
+  [ -n "$SSH_COMMAND" ] && default_mode="2"
+  while true; do
+    mode="$(prompt 'Choose' "$default_mode")"
+    case "$mode" in 1|2) break ;; *) printf 'Choose 1 or 2.\n' >/dev/tty ;; esac
+  done
+  if [ "$mode" = "1" ]; then
+    while true; do
+      HOST="$(prompt 'SSH host alias' "$HOST")"
+      if validate_host_alias "$HOST"; then break; fi
+      printf 'Enter a single SSH host alias, not a full ssh command.\n' >/dev/tty
+    done
+    SSH_COMMAND=""
+  else
+    local default_ssh="${SSH_COMMAND:-ssh -i ~/.ssh/example_ed25519 user@203.0.113.10}"
+    while true; do
+      SSH_COMMAND="$(prompt 'Full SSH command' "$default_ssh")"
+      if validate_ssh_command "$SSH_COMMAND"; then break; fi
+      printf 'SSH command must start with ssh.\n' >/dev/tty
+    done
+  fi
+
+  while true; do
+    DEFAULT_AGENT="$(prompt 'Default agent, codex or claude' "$DEFAULT_AGENT")"
+    case "$DEFAULT_AGENT" in codex|claude) break ;; *) printf 'Enter codex or claude.\n' >/dev/tty ;; esac
+  done
+  AGENT_CODEX_COMMAND="$(prompt 'Codex command' "$AGENT_CODEX_COMMAND")"
+  AGENT_CLAUDE_COMMAND="$(prompt 'Claude Code command' "$AGENT_CLAUDE_COMMAND")"
+  TMUX_SESSION="$(prompt 'Managed tmux session' "$TMUX_SESSION")"
+  REMOTE_CACHE_DIR="$(prompt 'Remote file cache dir' "$REMOTE_CACHE_DIR")"
+  REMOTE_HELPER_PATH="$(prompt 'Remote helper path' "$REMOTE_HELPER_PATH")"
+  if prompt_yes_no 'Start remote cache cleanup daemon' "$CLEANUP_ENABLED"; then CLEANUP_ENABLED="1"; else CLEANUP_ENABLED="0"; fi
+  CLEANUP_MAX_AGE_SECONDS="$(prompt 'Cleanup max age seconds' "$CLEANUP_MAX_AGE_SECONDS")"
+  CLEANUP_INTERVAL_SECONDS="$(prompt 'Cleanup interval seconds' "$CLEANUP_INTERVAL_SECONDS")"
+  save_config
+  printf '\nwrote %s\n' "$CONFIG_FILE" >/dev/tty
+}
+
+parse_remote_opts() {
+  AGENT_ARG=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --host) HOST="$2"; shift 2 ;;
+      --ssh) SSH_COMMAND="$2"; shift 2 ;;
+      --agent) AGENT_ARG="$2"; shift 2 ;;
+      --session) TMUX_SESSION="$2"; shift 2 ;;
+      --target) TARGET_ARG="$2"; shift 2 ;;
+      --max-age-seconds) MAX_AGE_ARG="$2"; shift 2 ;;
+      --hijack-paste) HIJACK_PASTE="1"; shift ;;
+      --*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+      *) if [ -z "${AGENT_ARG:-}" ]; then AGENT_ARG="$1"; else EXTRA_ARG="$1"; fi; shift ;;
+    esac
+  done
+}
+
+ssh_array_eval() {
+  # User-provided SSH command; this intentionally uses shell parsing so quoted -o values work.
+  eval "SSH_PARTS=($SSH_COMMAND)"
+}
+
+run_ssh() {
+  local remote_command="$1"
+  if [ -n "$SSH_COMMAND" ]; then
+    local -a SSH_PARTS
+    ssh_array_eval
+    "${SSH_PARTS[@]}" "$remote_command"
+  else
+    ssh "$HOST" "$remote_command"
+  fi
+}
+
+run_ssh_stdin() {
+  local remote_command="$1" input_file="$2"
+  if [ -n "$SSH_COMMAND" ]; then
+    local -a SSH_PARTS
+    ssh_array_eval
+    "${SSH_PARTS[@]}" "$remote_command" < "$input_file"
+  else
+    ssh "$HOST" "$remote_command" < "$input_file"
+  fi
+}
+
+remote_path_expr() {
+  case "$1" in
+    '~') printf '"$HOME"' ;;
+    '~/'*) printf '"$HOME/%s"' "$(printf '%s' "${1#~/}" | sed 's/["`$\\]/\\&/g')" ;;
+    *) shell_quote "$1" ;;
+  esac
+}
+
+remote_helper_command() {
+  local cmd
+  cmd="$(remote_path_expr "$REMOTE_HELPER_PATH")"
+  shift 0
+  for arg in "$@"; do
+    cmd="$cmd $(shell_quote "$arg")"
+  done
+  printf '%s\n' "$cmd"
+}
+
+run_remote_helper() {
+  local remote_cmd
+  remote_cmd="$(remote_helper_command "$@")"
+  run_ssh "$remote_cmd"
+}
+
+run_remote_helper_stdin() {
+  local input_file="$1" remote_cmd
+  shift
+  remote_cmd="$(remote_helper_command "$@")"
+  run_ssh_stdin "$remote_cmd" "$input_file"
+}
+
+agent_command() {
+  case "$1" in
+    codex) printf '%s\n' "$AGENT_CODEX_COMMAND" ;;
+    claude) printf '%s\n' "$AGENT_CLAUDE_COMMAND" ;;
+    '') agent_command "$DEFAULT_AGENT" ;;
+    *) printf '%s\n' "$1" ;;
+  esac
+}
+
+first_word() {
+  set -- $1
+  printf '%s\n' "${1:-}"
+}
+
+check_line() {
+  local ok="$1" label="$2" detail="$3"
+  if [ "$ok" = "1" ]; then printf 'ok   %s: %s\n' "$label" "$detail"; else printf 'fail %s: %s\n' "$label" "$detail"; return 1; fi
+}
+
+cmd_doctor() {
+  load_config
+  parse_remote_opts "$@"
+  local agent="${AGENT_ARG:-$DEFAULT_AGENT}" command command_bin ok=1 out
+  command="$(agent_command "$agent")"
+  command_bin="$(first_word "$command")"
+  check_line 1 'local platform' "$(uname -s)" || ok=0
+  command -v ssh >/dev/null 2>&1 && check_line 1 'local ssh' "$(command -v ssh)" || { check_line 0 'local ssh' 'not found'; ok=0; }
+  command -v swift >/dev/null 2>&1 && check_line 1 'local swift' "$(command -v swift)" || { check_line 0 'local swift' 'not found'; ok=0; }
+  if out="$(run_ssh 'printf ok' 2>&1)" && [ "$out" = "ok" ]; then check_line 1 'ssh access' ok; else check_line 0 'ssh access' "$out"; ok=0; fi
+  if out="$(run_ssh 'command -v tmux 2>/dev/null || true' 2>&1)" && [ -n "$out" ]; then check_line 1 'remote tmux' "$out"; else check_line 0 'remote tmux' 'not found'; ok=0; fi
+  if out="$(run_ssh "command -v $(shell_quote "$command_bin") 2>/dev/null || true" 2>&1)" && [ -n "$out" ]; then check_line 1 'remote agent' "$out"; else check_line 0 'remote agent' "$command_bin not found"; ok=0; fi
+  local cache_expr
+  cache_expr="$(remote_path_expr "$REMOTE_CACHE_DIR")"
+  if out="$(run_ssh "mkdir -p $cache_expr && test -w $cache_expr && printf ok" 2>&1)" && [ "$out" = "ok" ]; then check_line 1 'remote cache dir' "$REMOTE_CACHE_DIR"; else check_line 0 'remote cache dir' "$out"; ok=0; fi
+  [ "$ok" = "1" ]
+}
+
+remote_dirname() {
+  local path="${1%/}"
+  case "$path" in */*) printf '%s\n' "${path%/*}" ;; *) printf '.\n' ;; esac
+}
+
+remote_basename() {
+  local path="${1%/}"
+  printf '%s\n' "${path##*/}"
+}
+
+path_profile_block() {
+  local dir="$1"
+  local assignment
+  case "$dir" in
+    '~') assignment='SBP_BIN_DIR="$HOME"' ;;
+    '~/'*) assignment="SBP_BIN_DIR=\"\$HOME/${dir#~/}\"" ;;
+    *) assignment="SBP_BIN_DIR=$(shell_quote "$dir")" ;;
+  esac
+  cat <<EOF2
+
+# ssh-bin-paste PATH
+$assignment
+case \":\$PATH:\" in
+  *\":\$SBP_BIN_DIR:\"*) ;;
+  *) export PATH=\"\$SBP_BIN_DIR:\$PATH\" ;;
+esac
+EOF2
+}
+
+cmd_install_remote() {
+  load_config
+  parse_remote_opts "$@"
+  [ -f "$REMOTE_HELPER_ASSET" ] || { printf 'missing asset: %s\n' "$REMOTE_HELPER_ASSET" >&2; exit 1; }
+  local dir wrapper_path helper_name install_cmd verify wrapper tmp_wrapper
+  dir="$(remote_dirname "$REMOTE_HELPER_PATH")"
+  helper_name="$(remote_basename "$REMOTE_HELPER_PATH")"
+  wrapper_path="${dir%/}/ssh-bin-paste"
+  run_ssh "mkdir -p $(remote_path_expr "$dir")"
+  install_cmd="cat > $(remote_path_expr "$REMOTE_HELPER_PATH") && chmod 0755 $(remote_path_expr "$REMOTE_HELPER_PATH")"
+  run_ssh_stdin "$install_cmd" "$REMOTE_HELPER_ASSET"
+  verify="$(run_ssh "$(remote_path_expr "$REMOTE_HELPER_PATH") version")"
+  tmp_wrapper="$(mktemp)"
+  cat > "$tmp_wrapper" <<EOF2
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)"
+exec "\$DIR/$helper_name" "\$@"
+EOF2
+  run_ssh_stdin "cat > $(remote_path_expr "$wrapper_path") && chmod 0755 $(remote_path_expr "$wrapper_path")" "$tmp_wrapper"
+  rm -f "$tmp_wrapper"
+  local profile_block
+  profile_block="$(path_profile_block "$dir")"
+  run_ssh "for profile in \"\$HOME/.profile\" \"\$HOME/.zshrc\" \"\$HOME/.bashrc\"; do touch \"\$profile\"; grep -q 'ssh-bin-paste PATH' \"\$profile\" || cat >> \"\$profile\" <<'SBP_PATH_EOF'
+$profile_block
+SBP_PATH_EOF
+done"
+  printf 'installed %s and %s on %s (%s)\n' "$REMOTE_HELPER_PATH" "$wrapper_path" "${SSH_COMMAND:-ssh $HOST}" "$verify"
+  if [ "$CLEANUP_ENABLED" = "1" ]; then
+    run_remote_helper daemon-start "$REMOTE_CACHE_DIR" "$CLEANUP_MAX_AGE_SECONDS" "$CLEANUP_INTERVAL_SECONDS" | sed 's/^/cleanup daemon /'
+  fi
+}
+
+cmd_start() {
+  load_config
+  AGENT_ARG=""
+  parse_remote_opts "$@"
+  local agent="${AGENT_ARG:-$DEFAULT_AGENT}" command tmux_cmd pane
+  command="$(agent_command "$agent")"
+  tmux_cmd="tmux has-session -t $(shell_quote "$TMUX_SESSION") 2>/dev/null || tmux new-session -d -s $(shell_quote "$TMUX_SESSION") -n agent $(shell_quote "exec $command")"
+  run_ssh "$tmux_cmd"
+  pane="$(run_remote_helper panes | awk -F '\t' -v s="$TMUX_SESSION" '$1 == s {print $3; exit}')"
+  TARGET_PANE="$pane"
+  save_config
+  printf 'agent session ready: %s:%s target %s\n' "${SSH_COMMAND:-$HOST}" "$TMUX_SESSION" "$pane"
+  printf 'ssh into your VPS, then run: ssh-bin-paste attach\n'
+}
+
+cmd_panes() {
+  load_config
+  parse_remote_opts "$@"
+  run_remote_helper panes
+}
+
+resolve_target_pane() {
+  if [ -n "$TARGET_PANE" ]; then printf '%s\n' "$TARGET_PANE"; return; fi
+  run_remote_helper panes | awk -F '\t' '
+    BEGIN { best=""; bestscore=-1 }
+    {
+      h=tolower($1 " " $5 " " $7); score=0;
+      if (h ~ /codex/) score+=4;
+      if (h ~ /claude/) score+=4;
+      if (h ~ /agent/) score+=2;
+      if (score > bestscore) { bestscore=score; best=$3 }
+    }
+    END { if (best != "") print best }
+  '
+}
+
+extension_for_mime() {
+  case "$1" in
+    image/png) printf 'png' ;;
+    image/jpeg) printf 'jpg' ;;
+    image/webp) printf 'webp' ;;
+    image/gif) printf 'gif' ;;
+    *) printf 'bin' ;;
+  esac
+}
+
+json_field() {
+  local field="$1"
+  sed -n "s/.*\"$field\":\"\([^\"]*\)\".*/\1/p" | sed 's#\\/#/#g; s#\\"#"#g; s#\\\\#\\#g'
+}
+
+cmd_paste() {
+  load_config
+  TARGET_ARG=""
+  parse_remote_opts "$@"
+  [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
+  local output_path capture local_path mime ext cache remote_path target now uuid
+  output_path="$(mktemp -t ssh-bin-paste.XXXXXX).png"
+  capture="$(swift "$CLIPBOARD_HELPER" --output "$output_path")"
+  local_path="$(printf '%s\n' "$capture" | json_field path)"
+  mime="$(printf '%s\n' "$capture" | json_field mimeType)"
+  ext="$(extension_for_mime "$mime")"
+  cache="$(run_remote_helper ensure-cache "$REMOTE_CACHE_DIR")"
+  now="$(date +%s)"
+  uuid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
+  run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
+  target="${TARGET_ARG:-$(resolve_target_pane)}"
+  [ -n "$target" ] || { printf 'No target tmux pane found. Run ssh-bin-paste start codex first.\n' >&2; exit 1; }
+  printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
+  printf 'pasted %s into %s\n' "$remote_path" "$target"
+}
+
+cmd_cleanup() {
+  load_config
+  MAX_AGE_ARG="$CLEANUP_MAX_AGE_SECONDS"
+  parse_remote_opts "$@"
+  run_remote_helper cleanup "$REMOTE_CACHE_DIR" "${MAX_AGE_ARG:-$CLEANUP_MAX_AGE_SECONDS}"
+  printf 'cleaned files older than %ss on %s\n' "${MAX_AGE_ARG:-$CLEANUP_MAX_AGE_SECONDS}" "${SSH_COMMAND:-$HOST}"
+}
+
+cmd_cleanup_daemon() {
+  load_config
+  local action="${1:-status}"
+  shift || true
+  parse_remote_opts "$@"
+  case "$action" in
+    start) run_remote_helper daemon-start "$REMOTE_CACHE_DIR" "$CLEANUP_MAX_AGE_SECONDS" "$CLEANUP_INTERVAL_SECONDS" ;;
+    stop) run_remote_helper daemon-stop ;;
+    status) run_remote_helper daemon-status ;;
+    *) printf 'cleanup-daemon action must be start, stop, or status\n' >&2; exit 2 ;;
+  esac
+}
+
+cmd_daemon() {
+  load_config
+  parse_remote_opts "$@"
+  [ -f "$PASTE_DAEMON" ] || { printf 'missing asset: %s\n' "$PASTE_DAEMON" >&2; exit 1; }
+  local args=("$PASTE_DAEMON" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
+  if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
+  [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
+  swift "${args[@]}"
+}
+
+daemon_pid_alive() {
+  [ -f "$LOCAL_DAEMON_PID" ] || return 1
+  local pid
+  pid="$(cat "$LOCAL_DAEMON_PID" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+cmd_daemon_start() {
+  load_config
+  mkdir -p "$STATE_DIR"
+  if daemon_pid_alive; then
+    printf 'paste shortcut already running pid=%s\n' "$(cat "$LOCAL_DAEMON_PID")"
+    return 0
+  fi
+  nohup "$(command -v ssh-bin-paste || printf '%s' "$0")" daemon >>"$LOCAL_DAEMON_LOG" 2>&1 &
+  printf '%s\n' "$!" > "$LOCAL_DAEMON_PID"
+  sleep 1
+  if daemon_pid_alive; then
+    printf 'paste shortcut running pid=%s\n' "$(cat "$LOCAL_DAEMON_PID")"
+  else
+    cat "$LOCAL_DAEMON_LOG" >&2
+    return 1
+  fi
+}
+
+cmd_setup() {
+  run_config_wizard
+  cmd_doctor
+  cmd_install_remote
+  cmd_daemon_start || true
+  printf '\nsetup complete\n'
+}
+
+cmd_config() {
+  case "${1:-}" in
+    --path) printf '%s\n' "$CONFIG_FILE" ;;
+    --print) load_config; cat "$CONFIG_FILE" ;;
+    *) run_config_wizard ;;
+  esac
+}
+
+main() {
+  local cmd="${1:-}"
+  [ $# -gt 0 ] && shift || true
+  case "$cmd" in
+    setup) cmd_setup "$@" ;;
+    start) cmd_start "$@" ;;
+    paste) cmd_paste "$@" ;;
+    daemon) cmd_daemon "$@" ;;
+    daemon-start) cmd_daemon_start "$@" ;;
+    doctor) cmd_doctor "$@" ;;
+    install-remote) cmd_install_remote "$@" ;;
+    panes) cmd_panes "$@" ;;
+    cleanup) cmd_cleanup "$@" ;;
+    cleanup-daemon) cmd_cleanup_daemon "$@" ;;
+    config) cmd_config "$@" ;;
+    version|--version|-V) printf '%s\n' "$VERSION" ;;
+    help|--help|-h|'') usage ;;
+    *) printf 'unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
+  esac
+}
+
+main "$@"

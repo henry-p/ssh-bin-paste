@@ -2,7 +2,7 @@
 
 Paste supported local clipboard payloads into remote terminal agents over SSH.
 
-The core CLI is written in Rust, keeping the tool fast and resource-light enough for tiny VPS servers.
+The normal installer is script-only. You do not need Git, Rust, or Cargo to install or run it.
 
 Images are the main supported clipboard payload today. The bridge is file-based, so every supported binary file type follows the same upload-and-paste path.
 
@@ -45,7 +45,6 @@ ssh-bin-paste setup
 ## Requirements
 
 - macOS locally.
-- Rust/Cargo locally.
 - SSH access to the remote host.
 - `tmux` on the remote host.
 - Codex or Claude Code on the remote host.
