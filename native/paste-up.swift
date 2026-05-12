@@ -176,6 +176,6 @@ installDedicatedShortcut()
 if config.hijackPaste {
     installPasteHijackTap()
 }
-print("ssh-bin-paste daemon running. Cmd+Shift+V pastes supported clipboard payloads; paste hijack is \(config.hijackPaste ? "on" : "off").")
+print("ssh-bin-paste up running. Cmd+Shift+V pastes supported clipboard payloads; paste hijack is \(config.hijackPaste ? "on" : "off").")
 fflush(stdout)
 _ = carbonRunApplicationEventLoop()

@@ -4,7 +4,7 @@ set -euo pipefail
 BASE_URL="${SSH_BIN_PASTE_BASE_URL:-https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master}"
 BIN_DIR="${SSH_BIN_PASTE_BIN_DIR:-$HOME/.local/bin}"
 ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
-SKIP_SETUP="${SSH_BIN_PASTE_SKIP_SETUP:-0}"
+SKIP_CONFIG="${SSH_BIN_PASTE_SKIP_CONFIG:-0}"
 
 log() {
   printf '==> %s\n' "$*"
@@ -35,8 +35,8 @@ chmod 0755 "$BIN_DIR/ssh-bin-paste"
 log "installing runtime helpers to $ASSET_DIR"
 download "$BASE_URL/remote/ssh-bin-paste-remote.sh" "$ASSET_DIR/ssh-bin-paste-remote.sh"
 download "$BASE_URL/native/clipboard-capture.swift" "$ASSET_DIR/clipboard-capture.swift"
-download "$BASE_URL/native/paste-daemon.swift" "$ASSET_DIR/paste-daemon.swift"
-chmod 0644 "$ASSET_DIR/clipboard-capture.swift" "$ASSET_DIR/paste-daemon.swift"
+download "$BASE_URL/native/paste-up.swift" "$ASSET_DIR/paste-up.swift"
+chmod 0644 "$ASSET_DIR/clipboard-capture.swift" "$ASSET_DIR/paste-up.swift"
 chmod 0755 "$ASSET_DIR/ssh-bin-paste-remote.sh"
 
 case ":$PATH:" in
@@ -46,20 +46,17 @@ case ":$PATH:" in
     ;;
 esac
 
-if [ "$SKIP_SETUP" != "1" ]; then
-  log "running setup"
-  "$BIN_DIR/ssh-bin-paste" setup
+if [ "$SKIP_CONFIG" != "1" ]; then
+  log "running config"
+  "$BIN_DIR/ssh-bin-paste" config
 fi
 
 cat <<EOF2
 
 ssh-bin-paste installed.
 
-Start Codex:
-  ssh-bin-paste start codex
-
-Start Claude Code:
-  ssh-bin-paste start claude
+Pair with a remote agent session:
+  ssh-bin-paste pair
 
 After connecting to your VPS:
   ssh-bin-paste attach

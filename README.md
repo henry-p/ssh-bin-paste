@@ -6,40 +6,43 @@ The normal installer is script-only. You do not need Git, Rust, or Cargo to inst
 
 Images are the main supported clipboard payload today. The bridge is file-based, so every supported binary file type follows the same upload-and-paste path.
 
+Codex and Claude Code are both supported. Run either agent on the VPS inside `tmux`; ssh-bin-paste pairs your Mac with the SSH terminal you attach from.
+
 ## Quickstart
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-Start Codex:
+On your Mac:
 
 ```sh
-ssh-bin-paste start codex
+ssh-bin-paste pair
 ```
 
-Or start Claude Code:
+In another terminal, connect to your VPS yourself and attach to the agent session:
 
 ```sh
-ssh-bin-paste start claude
-```
-
-Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut to send it to the remote agent.
-
-When you SSH into your VPS, run:
-
-```sh
+ssh example-vps
 ssh-bin-paste attach
 ```
 
-## What setup does
+Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut. The payload is uploaded over SSH and the remote path is pasted into the currently attached agent session.
 
-The installer runs `ssh-bin-paste setup`. It guides you through SSH configuration, checks the remote host, installs the tiny remote helper, and starts remote cache cleanup.
+If the paste shortcut is not running:
+
+```sh
+ssh-bin-paste up
+```
+
+## What config does
+
+The installer runs `ssh-bin-paste config`. It guides you through SSH configuration, checks the remote host, installs the tiny remote helper, and starts the local paste shortcut.
 
 If you installed manually, run:
 
 ```sh
-ssh-bin-paste setup
+ssh-bin-paste config
 ```
 
 ## Requirements
@@ -47,4 +50,4 @@ ssh-bin-paste setup
 - macOS locally.
 - SSH access to the remote host.
 - `tmux` on the remote host.
-- Codex or Claude Code on the remote host.
+- Codex and/or Claude Code on the remote host.

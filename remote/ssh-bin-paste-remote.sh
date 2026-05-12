@@ -4,9 +4,11 @@ set -euo pipefail
 VERSION="0.1.0"
 DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/files}"
 STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
-DAEMON_PID_FILE="$STATE_DIR/cleanup-daemon.pid"
-DAEMON_LOG_FILE="$STATE_DIR/cleanup-daemon.log"
+CLEANUP_PID_FILE="$STATE_DIR/cleanup-worker.pid"
+CLEANUP_LOG_FILE="$STATE_DIR/cleanup-worker.log"
 LAST_SESSION_FILE="$STATE_DIR/last-session"
+ATTACH_DIR="$STATE_DIR/attachments"
+PAIRING_DIR="$STATE_DIR/pairing-requests"
 
 usage() {
   cat >&2 <<'EOF'
@@ -15,15 +17,18 @@ usage: ssh-bin-paste-remote <command> [args]
 commands:
   version
   attach
+  pairing-next
+  pairing-consume <attach-id>
+  resolve-attach <attach-id>
   remember-session <tmux-session>
   ensure-cache [cache-dir]
   panes
   inject <target-pane>
   cleanup [cache-dir] [max-age-seconds]
-  daemon [cache-dir] [max-age-seconds] [interval-seconds]
-  daemon-start [cache-dir] [max-age-seconds] [interval-seconds]
-  daemon-stop
-  daemon-status
+  cleanup-loop [cache-dir] [max-age-seconds] [interval-seconds]
+  cleanup-start [cache-dir] [max-age-seconds] [interval-seconds]
+  cleanup-stop
+  cleanup-status
 EOF
 }
 
@@ -44,6 +49,18 @@ ensure_cache() {
   printf '%s\n' "$dir"
 }
 
+quote_sh() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+new_id() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr 'A-Z' 'a-z'
+  else
+    printf '%s-%s\n' "$(date +%s)" "$$"
+  fi
+}
+
 list_panes() {
   tmux list-panes -a -F '#{session_name}	#{window_index}.#{pane_index}	#{pane_id}	#{pane_pid}	#{pane_current_command}	#{pane_current_path}	#{pane_title}' 2>/dev/null || true
 }
@@ -56,6 +73,107 @@ remember_session() {
   fi
   mkdir -p "$STATE_DIR"
   printf '%s\n' "$session" > "$LAST_SESSION_FILE"
+}
+
+write_attach_record() {
+  local attach_id="$1"
+  local session="$2"
+  local tty_name="$3"
+  local created_at
+  created_at="$(date +%s)"
+  mkdir -p "$ATTACH_DIR"
+  {
+    printf 'attach_id='
+    quote_sh "$attach_id"
+    printf '\n'
+    printf 'tmux_session='
+    quote_sh "$session"
+    printf '\n'
+    printf 'tty='
+    quote_sh "$tty_name"
+    printf '\n'
+    printf 'created_at='
+    quote_sh "$created_at"
+    printf '\n'
+  } > "$ATTACH_DIR/$attach_id"
+}
+
+write_pairing_request() {
+  local attach_id="$1"
+  local session="$2"
+  local created_at
+  created_at="$(date +%s)"
+  mkdir -p "$PAIRING_DIR"
+  {
+    printf 'attach_id='
+    quote_sh "$attach_id"
+    printf '\n'
+    printf 'tmux_session='
+    quote_sh "$session"
+    printf '\n'
+    printf 'created_at='
+    quote_sh "$created_at"
+    printf '\n'
+  } > "$PAIRING_DIR/$attach_id"
+}
+
+pairing_next() {
+  mkdir -p "$PAIRING_DIR"
+  local newest
+  newest="$(find "$PAIRING_DIR" -maxdepth 1 -type f -print 2>/dev/null | while IFS= read -r file; do
+    printf '%s\t%s\n' "$(stat -c %Y "$file" 2>/dev/null || stat -f %m "$file" 2>/dev/null || printf 0)" "$file"
+  done | sort -rn | head -n 1 | cut -f2-)"
+  [ -n "$newest" ] || return 1
+  cat "$newest"
+}
+
+pairing_consume() {
+  local attach_id="${1:-}"
+  if [ -z "$attach_id" ]; then
+    printf 'missing attach id\n' >&2
+    return 2
+  fi
+  rm -f "$PAIRING_DIR/$attach_id"
+}
+
+resolve_attach() {
+  local attach_id="${1:-}"
+  if [ -z "$attach_id" ]; then
+    printf 'missing attach id\n' >&2
+    return 2
+  fi
+
+  local record="$ATTACH_DIR/$attach_id"
+  if [ ! -f "$record" ]; then
+    printf 'stale attachment. Run ssh-bin-paste pair on your Mac and ssh-bin-paste attach on the VPS again.\n' >&2
+    return 1
+  fi
+
+  local tmux_session=""
+  local tty=""
+  # shellcheck disable=SC1090
+  . "$record"
+
+  if [ -z "$tmux_session" ] || [ -z "$tty" ]; then
+    printf 'invalid attachment record\n' >&2
+    return 1
+  fi
+  if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
+    printf 'paired tmux session no longer exists. Run ssh-bin-paste attach again.\n' >&2
+    return 1
+  fi
+
+  local pane
+  pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{client_active_pane}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+  if [ -z "$pane" ]; then
+    pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{pane_id}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+  fi
+  if [ -z "$pane" ]; then
+    printf 'paired tmux client is not attached. Re-run ssh-bin-paste attach on the VPS.\n' >&2
+    return 1
+  fi
+
+  printf '%s\n' "$pane"
 }
 
 session_score() {
@@ -117,7 +235,7 @@ attach_tmux() {
   done < <(rank_sessions)
 
   if [ "${#sessions[@]}" -eq 0 ]; then
-    printf 'No tmux sessions found. Start an agent first with ssh-bin-paste start codex or ssh-bin-paste start claude on your Mac.\n' >&2
+    printf 'No tmux sessions found. Start or resume your agent inside tmux first.\n' >&2
     return 1
   fi
 
@@ -155,6 +273,18 @@ attach_tmux() {
     return 1
   fi
 
+  remember_session "$target"
+  local attach_id tty_name
+  attach_id="$(new_id)"
+  tty_name="$(tty 2>/dev/null || true)"
+  if [ -z "$tty_name" ]; then
+    printf 'ssh-bin-paste attach needs to run from an interactive tty\n' >&2
+    return 1
+  fi
+  write_attach_record "$attach_id" "$target" "$tty_name"
+  write_pairing_request "$attach_id" "$target"
+  printf 'Pairing request created. If your Mac is running ssh-bin-paste pair, it will use this tmux attachment.\n'
+
   exec tmux attach-session -t "$target"
 }
 
@@ -181,7 +311,7 @@ cleanup() {
   find "$dir" -type f -name 'ssh-bin-paste-*' -mmin "+$(((max_age + 59) / 60))" -delete 2>/dev/null || true
 }
 
-daemon() {
+cleanup_loop() {
   local dir max_age interval
   dir="${1:-$DEFAULT_CACHE_DIR}"
   max_age="${2:-86400}"
@@ -193,50 +323,50 @@ daemon() {
   done
 }
 
-daemon_pid_alive() {
+cleanup_pid_alive() {
   local pid
-  [ -f "$DAEMON_PID_FILE" ] || return 1
-  pid="$(cat "$DAEMON_PID_FILE" 2>/dev/null || true)"
+  [ -f "$CLEANUP_PID_FILE" ] || return 1
+  pid="$(cat "$CLEANUP_PID_FILE" 2>/dev/null || true)"
   [ -n "$pid" ] || return 1
   kill -0 "$pid" 2>/dev/null
 }
 
-daemon_start() {
+cleanup_start() {
   local dir max_age interval
   dir="${1:-$DEFAULT_CACHE_DIR}"
   max_age="${2:-86400}"
   interval="${3:-300}"
 
   mkdir -p "$STATE_DIR"
-  if daemon_pid_alive; then
-    printf 'already running pid=%s\n' "$(cat "$DAEMON_PID_FILE")"
+  if cleanup_pid_alive; then
+    printf 'already running pid=%s\n' "$(cat "$CLEANUP_PID_FILE")"
     return 0
   fi
 
-  nohup "$0" daemon "$dir" "$max_age" "$interval" >>"$DAEMON_LOG_FILE" 2>&1 &
-  printf '%s\n' "$!" > "$DAEMON_PID_FILE"
+  nohup "$0" cleanup-loop "$dir" "$max_age" "$interval" >>"$CLEANUP_LOG_FILE" 2>&1 &
+  printf '%s\n' "$!" > "$CLEANUP_PID_FILE"
   printf 'started pid=%s max_age=%s interval=%s\n' "$!" "$max_age" "$interval"
 }
 
-daemon_stop() {
+cleanup_stop() {
   local pid
-  if ! daemon_pid_alive; then
-    rm -f "$DAEMON_PID_FILE"
+  if ! cleanup_pid_alive; then
+    rm -f "$CLEANUP_PID_FILE"
     printf 'not running\n'
     return 0
   fi
 
-  pid="$(cat "$DAEMON_PID_FILE")"
+  pid="$(cat "$CLEANUP_PID_FILE")"
   kill "$pid" 2>/dev/null || true
-  rm -f "$DAEMON_PID_FILE"
+  rm -f "$CLEANUP_PID_FILE"
   printf 'stopped pid=%s\n' "$pid"
 }
 
-daemon_status() {
-  if daemon_pid_alive; then
-    printf 'running pid=%s\n' "$(cat "$DAEMON_PID_FILE")"
+cleanup_status() {
+  if cleanup_pid_alive; then
+    printf 'running pid=%s\n' "$(cat "$CLEANUP_PID_FILE")"
   else
-    rm -f "$DAEMON_PID_FILE"
+    rm -f "$CLEANUP_PID_FILE"
     printf 'not running\n'
   fi
 }
@@ -247,6 +377,17 @@ case "${1:-}" in
     ;;
   attach)
     attach_tmux
+    ;;
+  pairing-next)
+    pairing_next
+    ;;
+  pairing-consume)
+    shift
+    pairing_consume "${1:-}"
+    ;;
+  resolve-attach)
+    shift
+    resolve_attach "${1:-}"
     ;;
   remember-session)
     shift
@@ -267,19 +408,19 @@ case "${1:-}" in
     shift
     cleanup "${1:-}" "${2:-}"
     ;;
-  daemon)
+  cleanup-loop)
     shift
-    daemon "${1:-}" "${2:-}" "${3:-}"
+    cleanup_loop "${1:-}" "${2:-}" "${3:-}"
     ;;
-  daemon-start)
+  cleanup-start)
     shift
-    daemon_start "${1:-}" "${2:-}" "${3:-}"
+    cleanup_start "${1:-}" "${2:-}" "${3:-}"
     ;;
-  daemon-stop)
-    daemon_stop
+  cleanup-stop)
+    cleanup_stop
     ;;
-  daemon-status)
-    daemon_status
+  cleanup-status)
+    cleanup_status
     ;;
   *)
     usage
