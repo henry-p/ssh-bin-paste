@@ -8,13 +8,13 @@ The tool attaches to a `tmux` session running `claude` or `codex` and pairs that
 
 ## Quickstart
 
-Install:
+### 1. Install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-1. On the host, start the paste process:
+### 2. On the host, start the paste capture process
 
 ```sh
 ssh-bin-paste up
@@ -22,7 +22,7 @@ ssh-bin-paste up
 
 On first run, this opens the config wizard and installs the remote helper; keep it running on the host.
 
-2. On the remote, attach to the agent session:
+### 3. On the remote, attach to the agent session
 
 ```sh
 ssh example-remote
