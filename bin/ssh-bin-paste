@@ -10,8 +10,6 @@ ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
 REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
 PASTE_UP="$ASSET_DIR/paste-up.swift"
-LOCAL_UP_PID="$STATE_DIR/local-up.pid"
-LOCAL_UP_LOG="$STATE_DIR/local-up.log"
 PAIRING_FILE="$STATE_DIR/current-pairing"
 
 HOST="example-remote"
@@ -31,7 +29,7 @@ usage() {
 usage: ssh-bin-paste <command> [args]
 
 commands:
-  config             configure SSH, install the remote helper, and start the paste shortcut
+  config             configure SSH and install the remote helper
   up                 run the paste shortcut and auto-pair with remote attach
   version            print version
 USAGE
@@ -334,6 +332,16 @@ done"
   fi
 }
 
+ensure_configured() {
+  if [ ! -f "$CONFIG_FILE" ]; then
+    run_config_wizard
+    check_requirements
+    install_remote_helper
+    printf '\nconfig complete\n'
+  fi
+  load_config
+}
+
 pair_watch_loop() {
   printf 'Waiting for remote attach on %s. In SSH, run: ssh-bin-paste attach\n' "${SSH_COMMAND:-$HOST}"
 
@@ -403,7 +411,7 @@ cmd_paste() {
 }
 
 cmd_up() {
-  load_config
+  ensure_configured
   parse_remote_opts "$@"
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
@@ -415,36 +423,10 @@ cmd_up() {
   swift "${args[@]}"
 }
 
-up_pid_alive() {
-  [ -f "$LOCAL_UP_PID" ] || return 1
-  local pid
-  pid="$(cat "$LOCAL_UP_PID" 2>/dev/null || true)"
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
-}
-
-start_up_background() {
-  load_config
-  mkdir -p "$STATE_DIR"
-  if up_pid_alive; then
-    printf 'paste shortcut already running pid=%s\n' "$(cat "$LOCAL_UP_PID")"
-    return 0
-  fi
-  nohup "$(command -v ssh-bin-paste || printf '%s' "$0")" up >>"$LOCAL_UP_LOG" 2>&1 &
-  printf '%s\n' "$!" > "$LOCAL_UP_PID"
-  sleep 1
-  if up_pid_alive; then
-    printf 'paste shortcut running pid=%s\n' "$(cat "$LOCAL_UP_PID")"
-  else
-    cat "$LOCAL_UP_LOG" >&2
-    return 1
-  fi
-}
-
 cmd_config() {
   run_config_wizard
   check_requirements
   install_remote_helper
-  start_up_background || true
   printf '\nconfig complete\n'
 }
 

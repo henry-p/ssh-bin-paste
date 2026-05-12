@@ -4,7 +4,6 @@ set -euo pipefail
 BASE_URL="${SSH_BIN_PASTE_BASE_URL:-https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master}"
 BIN_DIR="${SSH_BIN_PASTE_BIN_DIR:-$HOME/.local/bin}"
 ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
-SKIP_CONFIG="${SSH_BIN_PASTE_SKIP_CONFIG:-0}"
 
 log() {
   printf '==> %s\n' "$*"
@@ -46,14 +45,12 @@ case ":$PATH:" in
     ;;
 esac
 
-if [ "$SKIP_CONFIG" != "1" ]; then
-  log "running config"
-  "$BIN_DIR/ssh-bin-paste" config
-fi
-
 cat <<EOF2
 
 ssh-bin-paste installed.
+
+Start the host shortcut and configure on first run:
+  ssh-bin-paste up
 
 After connecting to your remote:
   ssh-bin-paste attach
