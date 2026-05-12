@@ -1,9 +1,10 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use std::io::{self, BufRead, IsTerminal, Write};
 
 use crate::config::{
     AgentProfile, AppConfig, ConfigOverrides, config_path, load_config, save_config,
 };
+use crate::ssh::parse_shell_words;
 
 pub fn run_config_command(print_path: bool, print_config: bool) -> Result<()> {
     if print_path {
@@ -50,45 +51,79 @@ fn run_wizard(
         if config.ssh_command.is_some() { 2 } else { 1 },
     )?;
     if target_mode == 1 {
-        config.host = prompt_string(input, output, "SSH host alias", &config.host)?;
+        config.host = prompt_string_validated(
+            input,
+            output,
+            "SSH host alias",
+            &config.host,
+            validate_host_alias,
+        )?;
         config.ssh_command = None;
     } else {
         let current = config
             .ssh_command
             .as_deref()
             .unwrap_or("ssh -i ~/.ssh/example_ed25519 root@203.0.113.10");
-        config.ssh_command = Some(prompt_string(input, output, "Full SSH command", current)?);
+        config.ssh_command = Some(prompt_string_validated(
+            input,
+            output,
+            "Full SSH command",
+            current,
+            validate_ssh_command,
+        )?);
     }
 
-    let default_agent = if config.agents.contains_key("codex") {
-        "codex"
+    let default_agent = if !config.default_agent.trim().is_empty() {
+        config.default_agent.clone()
+    } else if config.agents.contains_key("codex") {
+        "codex".to_string()
     } else if config.agents.contains_key("claude") {
-        "claude"
+        "claude".to_string()
     } else {
-        "agent"
+        "agent".to_string()
     };
-    let agent = prompt_string(input, output, "Default agent profile name", default_agent)?;
+    let agent = prompt_string_validated(
+        input,
+        output,
+        "Default agent profile name",
+        &default_agent,
+        validate_profile_name,
+    )?;
     let agent_command = config
         .agents
         .get(&agent)
         .map(|profile| profile.command.as_str())
         .unwrap_or(agent.as_str());
-    let command = prompt_string(input, output, "Agent command", agent_command)?;
+    let command = prompt_string_validated(
+        input,
+        output,
+        "Agent command",
+        agent_command,
+        validate_non_empty,
+    )?;
+    config.default_agent = agent.clone();
     config.agents.insert(agent, AgentProfile { command });
 
-    config.tmux_session =
-        prompt_string(input, output, "Managed tmux session", &config.tmux_session)?;
-    config.remote_cache_dir = prompt_string(
+    config.tmux_session = prompt_string_validated(
+        input,
+        output,
+        "Managed tmux session",
+        &config.tmux_session,
+        validate_tmux_session,
+    )?;
+    config.remote_cache_dir = prompt_string_validated(
         input,
         output,
         "Remote image cache dir",
         &config.remote_cache_dir,
+        validate_non_empty,
     )?;
-    config.remote_helper_path = prompt_string(
+    config.remote_helper_path = prompt_string_validated(
         input,
         output,
         "Remote helper path",
         &config.remote_helper_path,
+        validate_non_empty,
     )?;
     config.cleanup_daemon.enabled = prompt_bool(
         input,
@@ -160,6 +195,25 @@ fn prompt_string(
     }
 }
 
+fn prompt_string_validated<F>(
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+    label: &str,
+    default: &str,
+    validate: F,
+) -> Result<String>
+where
+    F: Fn(&str) -> Result<()>,
+{
+    loop {
+        let value = prompt_string(input, output, label, default)?;
+        match validate(&value) {
+            Ok(()) => return Ok(value),
+            Err(error) => writeln!(output, "{error}")?,
+        }
+    }
+}
+
 fn prompt_bool(
     input: &mut impl BufRead,
     output: &mut impl Write,
@@ -206,6 +260,55 @@ fn read_line(input: &mut impl BufRead) -> Result<String> {
     Ok(line.trim().to_string())
 }
 
+fn validate_non_empty(value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        bail!("Please enter a value.");
+    }
+    Ok(())
+}
+
+fn validate_host_alias(value: &str) -> Result<()> {
+    validate_non_empty(value)?;
+    if value.starts_with("ssh ") {
+        bail!("That looks like a full SSH command. Choose option 2 for full SSH commands.");
+    }
+    if value.split_whitespace().count() != 1 {
+        bail!("SSH host aliases cannot contain whitespace.");
+    }
+    Ok(())
+}
+
+fn validate_ssh_command(value: &str) -> Result<()> {
+    validate_non_empty(value)?;
+    let words = parse_shell_words(value)?;
+    let Some(program) = words.first() else {
+        bail!("SSH command is empty.");
+    };
+    if program != "ssh" && !program.ends_with("/ssh") {
+        bail!("SSH command must start with ssh.");
+    }
+    if words.len() < 2 {
+        bail!("SSH command must include a remote host.");
+    }
+    Ok(())
+}
+
+fn validate_profile_name(value: &str) -> Result<()> {
+    validate_non_empty(value)?;
+    if value.split_whitespace().count() != 1 {
+        bail!("Agent profile names cannot contain whitespace.");
+    }
+    Ok(())
+}
+
+fn validate_tmux_session(value: &str) -> Result<()> {
+    validate_non_empty(value)?;
+    if value.chars().any(char::is_whitespace) || value.contains(':') {
+        bail!("tmux session names cannot contain whitespace or ':'.");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,6 +324,7 @@ mod tests {
         run_wizard(&mut config, &mut input, &mut output).unwrap();
 
         assert_eq!(config.ssh_command.as_deref(), Some("ssh user@example.test"));
+        assert_eq!(config.default_agent, "claude");
         assert_eq!(config.agents["claude"].command, "claude --model sonnet");
         assert_eq!(config.tmux_session, "work");
         assert_eq!(config.remote_cache_dir, "/tmp/images");
@@ -228,5 +332,22 @@ mod tests {
         assert_eq!(config.cleanup_daemon.interval_seconds, 60);
         assert!(config.daemon.hijack_paste);
         assert!(String::from_utf8(output).unwrap().contains("Remote target"));
+    }
+
+    #[test]
+    fn wizard_reprompts_invalid_ssh_target() {
+        let mut config = AppConfig::default();
+        let answers = b"1\nssh user@example.test\nexample-vps\ncodex\ncodex\nagent\n~/.cache/ssh-bin-paste/images\n~/.local/bin/ssh-bin-paste-remote\ny\n86400\n300\nn\n";
+        let mut input = BufReader::new(Cursor::new(&answers[..]));
+        let mut output = Vec::new();
+
+        run_wizard(&mut config, &mut input, &mut output).unwrap();
+
+        assert_eq!(config.host, "example-vps");
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("Choose option 2 for full SSH commands")
+        );
     }
 }

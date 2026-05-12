@@ -33,6 +33,7 @@ pub struct AppConfig {
     pub host: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_command: Option<String>,
+    pub default_agent: String,
     pub tmux_session: String,
     pub remote_cache_dir: String,
     pub remote_helper_path: String,
@@ -68,6 +69,7 @@ impl Default for AppConfig {
         Self {
             host: "example-vps".to_string(),
             ssh_command: None,
+            default_agent: "codex".to_string(),
             tmux_session: "agent".to_string(),
             remote_cache_dir: "~/.cache/ssh-bin-paste/images".to_string(),
             remote_helper_path: "~/.local/bin/ssh-bin-paste-remote".to_string(),

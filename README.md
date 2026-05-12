@@ -41,21 +41,7 @@ ssh -t example-vps 'tmux attach -t agent'
 
 The install script clones or updates the repo at `~/coding/private/ssh-bin-paste`, builds the Rust CLI, installs it to `~/.local/bin/ssh-bin-paste`, runs `doctor`, installs the remote helper, and starts the remote cleanup daemon.
 
-Install options:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
-  SSH_BIN_PASTE_HOST=example-vps SSH_BIN_PASTE_AGENT=claude bash
-
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
-  SSH_BIN_PASTE_SSH='ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' bash
-
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
-  SSH_BIN_PASTE_DIR=~/tools/ssh-bin-paste bash
-
-curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | \
-  SSH_BIN_PASTE_SKIP_REMOTE=1 bash
-```
+The installer is interactive. It asks where to install the local binary, then launches the same `ssh-bin-paste config` wizard used after installation. The wizard accepts either an SSH config host alias, such as `example-vps`, or a full SSH command, such as `ssh -i ~/.ssh/example_ed25519 user@203.0.113.10`. It validates the shape of the input before writing config, and the installer then runs `doctor` to verify SSH, remote `tmux`, the selected agent command, and the writable remote cache.
 
 No remote server is installed. `install-remote` installs a tiny helper script that is invoked over SSH when needed.
 
@@ -66,15 +52,19 @@ No remote server is installed. `install-remote` installs a tiny helper script th
 ```sh
 ssh-bin-paste doctor --host example-vps --agent codex
 ssh-bin-paste config
+ssh-bin-paste doctor
 ssh-bin-paste doctor --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
 ssh-bin-paste install-remote --host example-vps
+ssh-bin-paste install-remote
 ssh-bin-paste install-remote --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
 ssh-bin-paste start --host example-vps --agent codex
+ssh-bin-paste start
 ssh-bin-paste start --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10' --agent codex
 ssh-bin-paste start --host example-vps --agent claude
 ssh-bin-paste panes --host example-vps
 ssh-bin-paste panes --host example-vps --select
 ssh-bin-paste paste --host example-vps
+ssh-bin-paste paste
 ssh-bin-paste paste --ssh 'ssh -i ~/.ssh/example_ed25519 root@203.0.113.10'
 ssh-bin-paste cleanup --host example-vps
 ssh-bin-paste cleanup-daemon status --host example-vps

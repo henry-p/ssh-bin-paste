@@ -35,8 +35,8 @@ enum Commands {
 
 #[derive(Debug, Args, Clone)]
 struct RemoteArgs {
-    #[arg(long, default_value = "example-vps", help = "SSH host alias")]
-    host: String,
+    #[arg(long, help = "SSH host alias; defaults to the saved config")]
+    host: Option<String>,
     #[arg(
         long,
         help = "Full SSH command, for example: ssh -i ~/.ssh/key user@host"
@@ -47,7 +47,7 @@ struct RemoteArgs {
 impl RemoteArgs {
     fn load_config(&self) -> Result<ssh_bin_paste::config::AppConfig> {
         load_config(ConfigOverrides {
-            host: Some(self.host.clone()),
+            host: self.host.clone(),
             ssh_command: self.ssh.clone(),
         })
     }
@@ -65,28 +65,28 @@ struct ConfigArgs {
 struct DoctorArgs {
     #[command(flatten)]
     remote: RemoteArgs,
-    #[arg(long, default_value = "codex", help = "Agent profile or command")]
-    agent: String,
+    #[arg(long, help = "Agent profile or command; defaults to the saved config")]
+    agent: Option<String>,
 }
 
 #[derive(Debug, Args)]
 struct InstallRemoteArgs {
     #[command(flatten)]
     remote: RemoteArgs,
-    #[arg(long = "no-cleanup-daemon", action = clap::ArgAction::SetFalse, default_value_t = true)]
-    cleanup_daemon: bool,
-    #[arg(long, default_value_t = 86_400)]
-    cleanup_max_age_seconds: u64,
-    #[arg(long, default_value_t = 300)]
-    cleanup_interval_seconds: u64,
+    #[arg(long = "no-cleanup-daemon", action = clap::ArgAction::SetTrue)]
+    no_cleanup_daemon: bool,
+    #[arg(long)]
+    cleanup_max_age_seconds: Option<u64>,
+    #[arg(long)]
+    cleanup_interval_seconds: Option<u64>,
 }
 
 #[derive(Debug, Args)]
 struct StartArgs {
     #[command(flatten)]
     remote: RemoteArgs,
-    #[arg(long, help = "Agent profile or command")]
-    agent: String,
+    #[arg(long, help = "Agent profile or command; defaults to the saved config")]
+    agent: Option<String>,
     #[arg(long, help = "Managed tmux session name")]
     session: Option<String>,
 }
@@ -149,7 +149,8 @@ fn run() -> Result<()> {
         Commands::Config(args) => run_config_command(args.path, args.print),
         Commands::Doctor(args) => {
             let config = args.remote.load_config()?;
-            let agent_command = resolve_agent_command(&config, &args.agent);
+            let agent = args.agent.unwrap_or_else(|| config.default_agent.clone());
+            let agent_command = resolve_agent_command(&config, &agent);
             let ok = run_doctor(&config, &agent_command)?;
             if !ok {
                 std::process::exit(1);
@@ -161,15 +162,20 @@ fn run() -> Result<()> {
             install_remote_helper(
                 &config,
                 &InstallRemoteOptions {
-                    cleanup_daemon: Some(args.cleanup_daemon),
-                    cleanup_max_age_seconds: Some(args.cleanup_max_age_seconds),
-                    cleanup_interval_seconds: Some(args.cleanup_interval_seconds),
+                    cleanup_daemon: if args.no_cleanup_daemon {
+                        Some(false)
+                    } else {
+                        None
+                    },
+                    cleanup_max_age_seconds: args.cleanup_max_age_seconds,
+                    cleanup_interval_seconds: args.cleanup_interval_seconds,
                 },
             )
         }
         Commands::Start(args) => {
             let config = args.remote.load_config()?;
-            start_managed_agent(&config, &args.agent, args.session.as_deref())
+            let agent = args.agent.unwrap_or_else(|| config.default_agent.clone());
+            start_managed_agent(&config, &agent, args.session.as_deref())
         }
         Commands::Panes(args) => {
             let config = args.remote.load_config()?;
