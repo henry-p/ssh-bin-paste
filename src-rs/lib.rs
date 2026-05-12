@@ -1,3 +1,13 @@
+pub mod assets;
+pub mod clipboard;
 pub mod config;
+pub mod config_command;
+pub mod daemon;
+pub mod doctor;
+pub mod panes;
+pub mod paste;
+pub mod remote_cache;
+pub mod remote_helper;
+pub mod remote_install;
 pub mod ssh;
-
+pub mod start;

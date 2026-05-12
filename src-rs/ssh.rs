@@ -1,5 +1,9 @@
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::io::Write;
+
+use crate::config::AppConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandResult {
@@ -11,6 +15,63 @@ pub struct CommandResult {
 pub trait SshTarget {
     fn host(&self) -> &str;
     fn ssh_command(&self) -> Option<&str>;
+}
+
+impl SshTarget for AppConfig {
+    fn host(&self) -> &str {
+        &self.host
+    }
+
+    fn ssh_command(&self) -> Option<&str> {
+        self.ssh_command.as_deref()
+    }
+}
+
+pub fn command_exists(command: &str) -> Result<Option<String>> {
+    let result = run_local("sh", &["-lc", &format!("command -v {}", shell_quote(command))], None)?;
+    let path = result.stdout.trim().to_string();
+    if result.exit_code == 0 && !path.is_empty() {
+        Ok(Some(path))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn run_ssh<T: SshTarget>(
+    target: &T,
+    remote_command: &str,
+    input: Option<&[u8]>,
+) -> Result<CommandResult> {
+    let args = ssh_args(target, remote_command)?;
+    run_local(&args[0], &args[1..].iter().map(String::as_str).collect::<Vec<_>>(), input)
+}
+
+pub fn run_local(program: &str, args: &[&str], input: Option<&[u8]>) -> Result<CommandResult> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| anyhow!("{program}: {error}"))?;
+
+    if let Some(input) = input {
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(input)?;
+        }
+    }
+
+    let output = child.wait_with_output()?;
+    Ok(CommandResult {
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: output.status.code().unwrap_or(1),
+    })
+}
+
+pub fn run_local_inherit(program: &str, args: &[&str]) -> Result<i32> {
+    let status = Command::new(program).args(args).status()?;
+    Ok(status.code().unwrap_or(1))
 }
 
 pub fn shell_quote(value: &str) -> String {
@@ -234,4 +295,3 @@ mod tests {
         assert!(args.iter().any(|arg| arg.ends_with("/.ssh/example_ed25519")));
     }
 }
-

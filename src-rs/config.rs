@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
@@ -102,7 +103,12 @@ pub fn config_path() -> PathBuf {
 
 pub fn load_config(overrides: ConfigOverrides) -> Result<AppConfig> {
     let mut config = match fs::read_to_string(config_path()) {
-        Ok(raw) => serde_json::from_str::<AppConfig>(&raw).context("failed to parse config file")?,
+        Ok(raw) => {
+            let mut base = serde_json::to_value(AppConfig::default())?;
+            let user = serde_json::from_str::<Value>(&raw).context("failed to parse config file")?;
+            merge_json(&mut base, user);
+            serde_json::from_value::<AppConfig>(base).context("failed to load config file")?
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => AppConfig::default(),
         Err(error) => return Err(error).context("failed to read config file"),
     };
@@ -116,12 +122,53 @@ pub fn load_config(overrides: ConfigOverrides) -> Result<AppConfig> {
     Ok(config)
 }
 
+pub fn save_config(config: &AppConfig) -> Result<()> {
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(&path, format!("{}\n", serde_json::to_string_pretty(config)?))
+        .with_context(|| format!("failed to write {}", path.display()))
+}
+
+pub fn ensure_config_file() -> Result<PathBuf> {
+    let path = config_path();
+    if path.exists() {
+        return Ok(path);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    fs::write(
+        &path,
+        format!("{}\n", serde_json::to_string_pretty(&AppConfig::default())?),
+    )
+    .with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(path)
+}
+
 pub fn resolve_agent_command(config: &AppConfig, agent: &str) -> String {
     config
         .agents
         .get(agent)
         .map(|profile| profile.command.clone())
         .unwrap_or_else(|| agent.to_string())
+}
+
+fn merge_json(base: &mut Value, overlay: Value) {
+    match (base, overlay) {
+        (Value::Object(base_map), Value::Object(overlay_map)) => {
+            for (key, value) in overlay_map {
+                match base_map.get_mut(&key) {
+                    Some(existing) => merge_json(existing, value),
+                    None => {
+                        base_map.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base_value, overlay_value) => *base_value = overlay_value,
+    }
 }
 
 #[cfg(test)]
@@ -142,4 +189,3 @@ mod tests {
         assert_eq!(resolve_agent_command(&config, "unknown-agent"), "unknown-agent");
     }
 }
-
