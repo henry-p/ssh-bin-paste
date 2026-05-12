@@ -10,11 +10,12 @@ You keep using your normal SSH terminal. The tool attaches to a `tmux` session r
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-Start the host shortcut. On first run, this opens the config wizard and installs the remote helper.
-
+Start the host process:
 ```sh
 ssh-bin-paste up
 ```
+On first run, this opens the config wizard and installs the remote helper.
+Keep it running on the host.
 
 In another terminal, connect to your remote yourself and attach to the agent session:
 
@@ -22,8 +23,8 @@ In another terminal, connect to your remote yourself and attach to the agent ses
 ssh example-remote
 ssh-bin-paste attach
 ```
-
-Keep `ssh-bin-paste up` running on the host. Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut. The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
+Done! Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut.
+The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
 
 ## Commands
 
@@ -37,4 +38,9 @@ Keep `ssh-bin-paste up` running on the host. Copy a supported file or image loca
 
 **Host**: macOS with Swift available (e.g. via Apple Command Line Tools)\
 &nbsp;&nbsp;&nbsp;↓ *SSH*\
-**Remote**: `tmux` , `codex` || `claude`\
+**Remote**: `tmux` , `codex` || `claude`
+
+## Coming soon
+
+- Launch service on system start
+- Windows/Linux support
