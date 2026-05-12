@@ -34,8 +34,8 @@ chmod 0755 "$BIN_DIR/ssh-bin-paste"
 
 log "installing runtime helpers to $ASSET_DIR"
 download "$BASE_URL/remote/ssh-bin-paste-remote.sh" "$ASSET_DIR/ssh-bin-paste-remote.sh"
-download "$BASE_URL/native/clipboard-capture.swift" "$ASSET_DIR/clipboard-capture.swift"
-download "$BASE_URL/native/paste-up.swift" "$ASSET_DIR/paste-up.swift"
+download "$BASE_URL/native/macos/clipboard-capture.swift" "$ASSET_DIR/clipboard-capture.swift"
+download "$BASE_URL/native/macos/paste-up.swift" "$ASSET_DIR/paste-up.swift"
 chmod 0644 "$ASSET_DIR/clipboard-capture.swift" "$ASSET_DIR/paste-up.swift"
 chmod 0755 "$ASSET_DIR/ssh-bin-paste-remote.sh"
 
