@@ -34,11 +34,12 @@ ssh -t example-vps 'tmux attach -t agent'
 ## Requirements
 
 - macOS on the local machine.
+- Rust/Cargo on the local machine.
 - SSH access to the remote host.
 - `tmux` on the remote host.
 - An agent CLI on the remote host, such as Codex or Claude Code.
 
-The install script clones or updates the repo at `~/coding/private/ssh-bin-paste`, runs `npm install`, builds the CLI, links `ssh-bin-paste`, runs `doctor`, installs the remote helper, and starts the remote cleanup daemon.
+The install script clones or updates the repo at `~/coding/private/ssh-bin-paste`, builds the Rust CLI, installs it to `~/.local/bin/ssh-bin-paste`, runs `doctor`, installs the remote helper, and starts the remote cleanup daemon.
 
 Install options:
 

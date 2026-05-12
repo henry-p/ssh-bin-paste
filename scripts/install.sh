@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_URL="${SSH_BIN_PASTE_REPO:-git@github.com:henry-p/ssh-bin-paste.git}"
 INSTALL_DIR="${SSH_BIN_PASTE_DIR:-$HOME/coding/private/ssh-bin-paste}"
 BRANCH="${SSH_BIN_PASTE_BRANCH:-master}"
+BIN_DIR="${SSH_BIN_PASTE_BIN_DIR:-$HOME/.local/bin}"
 HOST="${SSH_BIN_PASTE_HOST:-example-vps}"
 SSH_COMMAND="${SSH_BIN_PASTE_SSH:-}"
 AGENT="${SSH_BIN_PASTE_AGENT:-codex}"
@@ -30,7 +31,7 @@ remote_label() {
 }
 
 need git
-need npm
+need cargo
 need ssh
 need swift
 
@@ -52,14 +53,17 @@ fi
 
 cd "$INSTALL_DIR"
 
-log "installing dependencies"
-npm install
+log "building Rust CLI"
+cargo build --release
 
-log "building CLI"
-npm run build
+log "installing ssh-bin-paste to $BIN_DIR"
+mkdir -p "$BIN_DIR"
+install -m 0755 target/release/ssh-bin-paste "$BIN_DIR/ssh-bin-paste"
+BIN="$BIN_DIR/ssh-bin-paste"
 
-log "linking ssh-bin-paste"
-npm link
+if ! command -v ssh-bin-paste >/dev/null 2>&1; then
+  log "add $BIN_DIR to PATH to run ssh-bin-paste without the full path"
+fi
 
 if [ -n "$SSH_COMMAND" ]; then
   REMOTE_ARGS=(--ssh "$SSH_COMMAND")
@@ -69,23 +73,23 @@ fi
 REMOTE_LABEL="$(remote_label)"
 
 log "running doctor for $REMOTE_LABEL / $AGENT"
-ssh-bin-paste doctor "${REMOTE_ARGS[@]}" --agent "$AGENT"
+"$BIN" doctor "${REMOTE_ARGS[@]}" --agent "$AGENT"
 
 if [ "$SKIP_REMOTE" != "1" ]; then
   log "installing remote helper on $REMOTE_LABEL"
-  ssh-bin-paste install-remote "${REMOTE_ARGS[@]}"
+  "$BIN" install-remote "${REMOTE_ARGS[@]}"
 else
   log "skipping remote helper install"
 fi
 
 if [ -n "$SSH_COMMAND" ]; then
-  START_COMMAND="ssh-bin-paste start --ssh '$SSH_COMMAND' --agent $AGENT"
+  START_COMMAND="$BIN start --ssh '$SSH_COMMAND' --agent $AGENT"
   ATTACH_COMMAND="use the attach command printed by ssh-bin-paste start"
-  PASTE_COMMAND="ssh-bin-paste paste --ssh '$SSH_COMMAND'"
+  PASTE_COMMAND="$BIN paste --ssh '$SSH_COMMAND'"
 else
-  START_COMMAND="ssh-bin-paste start --host $HOST --agent $AGENT"
+  START_COMMAND="$BIN start --host $HOST --agent $AGENT"
   ATTACH_COMMAND="ssh -t $HOST 'tmux attach -t agent'"
-  PASTE_COMMAND="ssh-bin-paste paste --host $HOST"
+  PASTE_COMMAND="$BIN paste --host $HOST"
 fi
 
 cat <<EOF
