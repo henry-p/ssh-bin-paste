@@ -10,12 +10,6 @@ ssh-bin-paste uses `tmux` on the remote host so it has a stable place to inject 
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-On your Mac:
-
-```sh
-ssh-bin-paste pair
-```
-
 In another terminal, connect to your VPS yourself and attach to the agent session:
 
 ```sh
@@ -36,17 +30,9 @@ ssh-bin-paste up
 | Command | Where | Purpose |
 | --- | --- | --- |
 | `ssh-bin-paste config` | Mac | Configure SSH, install the remote helper, and start the paste shortcut. |
-| `ssh-bin-paste pair` | Mac | Pair this Mac with the next remote `attach`. |
-| `ssh-bin-paste up` | Mac | Run the paste shortcut listener in the foreground. |
-| `ssh-bin-paste up-start` | Mac | Start the paste shortcut listener in the background. |
-| `ssh-bin-paste paste` | Mac | Upload the current clipboard payload and paste its remote path into the paired session. |
-| `ssh-bin-paste doctor` | Mac | Check local requirements, SSH access, remote `tmux`, agent commands, and cache access. |
-| `ssh-bin-paste install-remote` | Mac | Install the tiny remote helper on the VPS. |
-| `ssh-bin-paste panes` | Mac | List remote `tmux` panes. |
-| `ssh-bin-paste cleanup` | Mac | Remove old remote cached payloads. |
-| `ssh-bin-paste cleanup-worker start|stop|status` | Mac | Manage automatic remote cache cleanup. |
+| `ssh-bin-paste up` | Mac | Run the paste shortcut and wait for remote `attach` pairings. |
 | `ssh-bin-paste attach` | VPS | Choose and attach to the remote `tmux` session running Claude or Codex. |
-| `ssh-bin-paste version` | Mac/VPS | Print the installed version. |
+| `ssh-bin-paste paste` | Mac | Optional manual paste fallback. |
 
 ## Requirements
 

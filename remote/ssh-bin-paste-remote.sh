@@ -145,7 +145,7 @@ resolve_attach() {
 
   local record="$ATTACH_DIR/$attach_id"
   if [ ! -f "$record" ]; then
-    printf 'stale attachment. Run ssh-bin-paste pair on your Mac and ssh-bin-paste attach on the VPS again.\n' >&2
+    printf 'stale attachment. Keep ssh-bin-paste up running on your Mac and run ssh-bin-paste attach on the VPS again.\n' >&2
     return 1
   fi
 
@@ -283,7 +283,7 @@ attach_tmux() {
   fi
   write_attach_record "$attach_id" "$target" "$tty_name"
   write_pairing_request "$attach_id" "$target"
-  printf 'Pairing request created. If your Mac is running ssh-bin-paste pair, it will use this tmux attachment.\n'
+  printf 'Pairing request created. If your Mac is running ssh-bin-paste up, it will use this tmux attachment.\n'
 
   exec tmux attach-session -t "$target"
 }

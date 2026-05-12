@@ -55,9 +55,8 @@ cat <<EOF2
 
 ssh-bin-paste installed.
 
-Pair with a remote agent session:
-  ssh-bin-paste pair
-
 After connecting to your VPS:
   ssh-bin-paste attach
+
+Then copy a supported payload locally and press Cmd+Shift+V.
 EOF2

@@ -33,15 +33,8 @@ usage: ssh-bin-paste <command> [args]
 
 commands:
   config             configure SSH, install the remote helper, and start the paste shortcut
-  pair               pair this Mac with a remote ssh-bin-paste attach session
-  paste              upload the local clipboard payload and inject it into the agent pane
-  up                 run the macOS paste shortcut listener in the foreground
-  up-start           start the paste shortcut listener in the background
-  doctor             check local and remote requirements
-  install-remote     install the remote helper and attach command
-  panes              list remote tmux panes
-  cleanup            clean old remote cached files
-  cleanup-worker     start, stop, or inspect remote cache cleanup
+  up                 run the paste shortcut and auto-pair with remote attach
+  paste              manually paste the current clipboard payload
   version            print version
 USAGE
 }
@@ -347,23 +340,11 @@ done"
   fi
 }
 
-cmd_panes() {
-  load_config
-  parse_remote_opts "$@"
-  run_remote_helper panes
-}
+pair_watch_loop() {
+  printf 'Waiting for remote attach on %s. In SSH, run: ssh-bin-paste attach\n' "${SSH_COMMAND:-$HOST}"
 
-cmd_pair() {
-  load_config
-  parse_remote_opts "$@"
-  printf 'Pairing mode active.\n'
-  printf 'Now SSH into your VPS and run:\n\n'
-  printf '  ssh-bin-paste attach\n\n'
-  printf 'Waiting for a pairing request on %s...\n' "${SSH_COMMAND:-$HOST}"
-
-  local request attach_id tmux_session created_at deadline now
-  deadline=$(( $(date +%s) + 90 ))
-  while [ "$(date +%s)" -le "$deadline" ]; do
+  local request attach_id tmux_session created_at
+  while true; do
     request="$(run_remote_helper pairing-next 2>/dev/null || true)"
     if [ -n "$request" ]; then
       attach_id="$(printf '%s\n' "$request" | sed -n "s/^attach_id='\(.*\)'$/\1/p" | sed "s/'\\\\''/'/g")"
@@ -373,15 +354,10 @@ cmd_pair() {
         save_pairing "$attach_id" "$tmux_session" "${created_at:-$(date +%s)}"
         run_remote_helper pairing-consume "$attach_id" >/dev/null 2>&1 || true
         printf 'Paired %s -> %s.\n' "${SSH_COMMAND:-$HOST}" "$tmux_session"
-        printf 'Cmd+Shift+V is ready.\n'
-        return 0
       fi
     fi
-    printf '.'
-    sleep 1
+    sleep 2
   done
-  printf '\nNo pairing request found. Run ssh-bin-paste attach on the VPS while pair is waiting.\n' >&2
-  return 1
 }
 
 resolve_target_pane() {
@@ -414,7 +390,7 @@ cmd_paste() {
   parse_remote_opts "$@"
   if [ -z "${TARGET_ARG:-}" ]; then
     load_pairing_target || {
-      printf 'No paired remote session. Run ssh-bin-paste pair on your Mac, then ssh-bin-paste attach on the VPS.\n' >&2
+      printf 'No paired remote session. Keep ssh-bin-paste up running on your Mac, then run ssh-bin-paste attach on the VPS.\n' >&2
       exit 1
     }
   fi
@@ -431,30 +407,9 @@ cmd_paste() {
   remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
   run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
   target="${TARGET_ARG:-$(resolve_target_pane)}"
-  [ -n "$target" ] || { printf 'Paired remote session is stale. Run ssh-bin-paste pair, then ssh-bin-paste attach again.\n' >&2; exit 1; }
+  [ -n "$target" ] || { printf 'Paired remote session is stale. Keep ssh-bin-paste up running, then run ssh-bin-paste attach again.\n' >&2; exit 1; }
   printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
   printf 'pasted %s into %s\n' "$remote_path" "$target"
-}
-
-cmd_cleanup() {
-  load_config
-  MAX_AGE_ARG="$CLEANUP_MAX_AGE_SECONDS"
-  parse_remote_opts "$@"
-  run_remote_helper cleanup "$REMOTE_CACHE_DIR" "${MAX_AGE_ARG:-$CLEANUP_MAX_AGE_SECONDS}"
-  printf 'cleaned files older than %ss on %s\n' "${MAX_AGE_ARG:-$CLEANUP_MAX_AGE_SECONDS}" "${SSH_COMMAND:-$HOST}"
-}
-
-cmd_cleanup_worker() {
-  load_config
-  local action="${1:-status}"
-  shift || true
-  parse_remote_opts "$@"
-  case "$action" in
-    start) run_remote_helper cleanup-start "$REMOTE_CACHE_DIR" "$CLEANUP_MAX_AGE_SECONDS" "$CLEANUP_INTERVAL_SECONDS" ;;
-    stop) run_remote_helper cleanup-stop ;;
-    status) run_remote_helper cleanup-status ;;
-    *) printf 'cleanup-worker action must be start, stop, or status\n' >&2; exit 2 ;;
-  esac
 }
 
 cmd_up() {
@@ -464,6 +419,9 @@ cmd_up() {
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
   if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
+  pair_watch_loop &
+  local watcher_pid="$!"
+  trap 'kill "$watcher_pid" 2>/dev/null || true' EXIT INT TERM
   swift "${args[@]}"
 }
 
@@ -509,15 +467,8 @@ main() {
   [ $# -gt 0 ] && shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
-    pair) cmd_pair "$@" ;;
     paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
-    up-start) cmd_up_start "$@" ;;
-    doctor) cmd_doctor "$@" ;;
-    install-remote) cmd_install_remote "$@" ;;
-    panes) cmd_panes "$@" ;;
-    cleanup) cmd_cleanup "$@" ;;
-    cleanup-worker) cmd_cleanup_worker "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;
     help|--help|-h|'') usage ;;
     *) printf 'unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
