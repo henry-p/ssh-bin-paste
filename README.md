@@ -8,23 +8,27 @@ The tool attaches to a `tmux` session running `claude` or `codex` and pairs that
 
 ## Quickstart
 
+Install:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/henry-p/ssh-bin-paste/master/scripts/install.sh | bash
 ```
 
-Start the host process:
+1. On the host, start the paste process:
+
 ```sh
 ssh-bin-paste up
 ```
-On first run, this opens the config wizard and installs the remote helper.
-Keep it running on the host.
 
-In another terminal, connect to your remote yourself and attach to the agent session:
+On first run, this opens the config wizard and installs the remote helper; keep it running on the host.
+
+2. On the remote, attach to the agent session:
 
 ```sh
 ssh example-remote
 ssh-bin-paste attach
 ```
+
 Done! Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut.
 The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
 
