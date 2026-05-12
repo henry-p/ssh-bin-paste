@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { AppConfig } from "./config.js";
-import { commandExists, runSsh, shellQuote } from "./ssh.js";
+import { commandExists, remotePathExpr, runSsh, shellQuote } from "./ssh.js";
 
 interface Check {
   label: string;
@@ -56,9 +56,9 @@ async function remoteCommandCheck(config: AppConfig, label: string, command: str
 
 async function remoteWritableCacheCheck(config: AppConfig): Promise<Check> {
   const command = [
-    `mkdir -p ${shellQuote(config.remoteCacheDir)}`,
-    `test -d ${shellQuote(config.remoteCacheDir)}`,
-    `test -w ${shellQuote(config.remoteCacheDir)}`,
+    `mkdir -p ${remotePathExpr(config.remoteCacheDir)}`,
+    `test -d ${remotePathExpr(config.remoteCacheDir)}`,
+    `test -w ${remotePathExpr(config.remoteCacheDir)}`,
     `printf ok`,
   ].join(" && ");
   return remoteCheck(config, "remote cache dir", command, "ok", true, config.remoteCacheDir);
@@ -92,4 +92,3 @@ export async function assertReadable(path: string): Promise<boolean> {
     return false;
   }
 }
-

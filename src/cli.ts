@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { loadConfig, resolveAgentCommand } from "./config.js";
 import { runDoctor } from "./doctor.js";
+import { installRemoteHelper } from "./remote-install.js";
 
 const program = new Command();
 
@@ -26,8 +27,9 @@ program
   .command("install-remote")
   .description("Install or update the remote helper.")
   .option("--host <host>", "SSH host alias", "vibeps")
-  .action((options: { host: string }) => {
-    console.log(`install-remote placeholder for ${options.host}`);
+  .action(async (options: { host: string }) => {
+    const config = await loadConfig({ host: options.host });
+    await installRemoteHelper(config);
   });
 
 program

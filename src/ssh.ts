@@ -12,8 +12,8 @@ export async function commandExists(command: string): Promise<string | null> {
   return result.exitCode === 0 && path.length > 0 ? path : null;
 }
 
-export async function runSsh(host: string, remoteCommand: string): Promise<CommandResult> {
-  return runLocal("ssh", [host, remoteCommand]);
+export async function runSsh(host: string, remoteCommand: string, input?: string | Buffer): Promise<CommandResult> {
+  return runLocal("ssh", [host, remoteCommand], input);
 }
 
 export async function runLocal(command: string, args: string[], input?: string | Buffer): Promise<CommandResult> {
@@ -42,4 +42,14 @@ export async function runLocal(command: string, args: string[], input?: string |
 
 export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export function remotePathExpr(value: string): string {
+  if (value === "~") return '"$HOME"';
+  if (value.startsWith("~/")) return `"$HOME/${escapeDoubleQuoted(value.slice(2))}"`;
+  return shellQuote(value);
+}
+
+function escapeDoubleQuoted(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`");
 }
