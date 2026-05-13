@@ -372,6 +372,9 @@ replace_local_path() {
     tmux send-keys -t "$target" BSpace
     i=$((i + 1))
   done
+  case "$typed_path" in
+    /*|file:///*|file://localhost/*) tmux send-keys -t "$target" BSpace ;;
+  esac
   remove_leftover_path_slash "$target"
   printf '%s' "$remote_path" | inject "$target"
 }
@@ -440,7 +443,7 @@ case "${1:-}" in
     printf '%s\n' "$VERSION"
     ;;
   protocol-version)
-    printf '3\n'
+    printf '4\n'
     ;;
   install-tmux-binding)
     install_tmux_binding
