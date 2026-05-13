@@ -222,16 +222,16 @@ func parseShortcut(_ value: String) -> Shortcut? {
         switch part.lowercased() {
         case "cmd", "command":
             carbonModifiers |= UInt32(cmdKey)
-            displayParts.append("Cmd")
+            displayParts.append("CMD")
         case "shift":
             carbonModifiers |= UInt32(shiftKey)
-            displayParts.append("Shift")
+            displayParts.append("SHIFT")
         case "option", "opt", "alt":
             carbonModifiers |= UInt32(optionKey)
-            displayParts.append("Option")
+            displayParts.append("OPTION")
         case "ctrl", "control":
             carbonModifiers |= UInt32(controlKey)
-            displayParts.append("Ctrl")
+            displayParts.append("CTRL")
         default:
             return nil
         }

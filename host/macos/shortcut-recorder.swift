@@ -61,16 +61,16 @@ func keyName(for code: CGKeyCode) -> String? {
 func modifierNames(_ flags: CGEventFlags) -> [String] {
     var names: [String] = []
     if flags.contains(.maskCommand) {
-        names.append("Cmd")
+        names.append("CMD")
     }
     if flags.contains(.maskControl) {
-        names.append("Ctrl")
+        names.append("CTRL")
     }
     if flags.contains(.maskAlternate) {
-        names.append("Option")
+        names.append("OPTION")
     }
     if flags.contains(.maskShift) {
-        names.append("Shift")
+        names.append("SHIFT")
     }
     return names
 }
