@@ -109,8 +109,10 @@ func replaceStatusLine(_ text: String) {
 
 func renderCurrent(_ flags: CGEventFlags) {
     let names = modifierNames(flags)
-    let current = names.isEmpty ? "(press shortcut)" : names.joined(separator: "+")
-    replaceStatusLine("Current: \(current)")
+    let current = names.isEmpty
+        ? "(Recording... Press [Enter] to keep [\(defaultShortcut)], [Esc] to cancel.)"
+        : names.joined(separator: "+")
+    replaceStatusLine("New shortcut: \(current)")
 }
 
 func finish(_ shortcut: String, status: Int32 = 0) {
@@ -150,7 +152,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     }
     guard let shortcut = shortcutString(flags: event.flags, keyCode: keyCode) else {
-        replaceStatusLine("Use CMD, optionally with other modifiers, plus a normal key.")
+        replaceStatusLine("New shortcut: Use CMD, optionally with other modifiers, plus a normal key.")
         return nil
     }
     writeStderr("\nRecorded \(shortcut).\n")
@@ -158,8 +160,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     return nil
 }
 
-writeStderr("Recording paste command. Press Enter to keep \(defaultShortcut), Esc to cancel.\n")
-writeStderr("Press the new shortcut now.\n")
+writeStderr("Recording paste command.\n\n")
 configureTerminalForRecording()
 renderCurrent([])
 

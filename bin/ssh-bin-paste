@@ -102,7 +102,6 @@ validate_shortcut() {
 prompt_paste_shortcut() {
   local default="$1" recorded
   while true; do
-    printf 'Paste command [%s]\n' "$default" >/dev/tty
     if [ ! -f "$SHORTCUT_RECORDER" ]; then
       printf 'missing asset: %s\n' "$SHORTCUT_RECORDER" >/dev/tty
       printf '%s\n' "$default"
