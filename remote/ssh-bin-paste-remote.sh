@@ -71,6 +71,7 @@ write_attach_record() {
   local attach_id="$1"
   local session="$2"
   local tty_name="$3"
+  local target_pane="${4:-}"
   local created_at
   created_at="$(date +%s)"
   mkdir -p "$ATTACH_DIR"
@@ -83,6 +84,9 @@ write_attach_record() {
     printf '\n'
     printf 'tty='
     quote_sh "$tty_name"
+    printf '\n'
+    printf 'target_pane='
+    quote_sh "$target_pane"
     printf '\n'
     printf 'created_at='
     quote_sh "$created_at"
@@ -143,10 +147,11 @@ resolve_attach() {
 
   local tmux_session=""
   local tty=""
+  local target_pane=""
   # shellcheck disable=SC1090
   . "$record"
 
-  if [ -z "$tmux_session" ] || [ -z "$tty" ]; then
+  if [ -z "$tmux_session" ] || { [ -z "$tty" ] && [ -z "$target_pane" ]; }; then
     printf 'invalid attachment record\n' >&2
     return 1
   fi
@@ -155,10 +160,15 @@ resolve_attach() {
     return 1
   fi
 
-  local pane
-  pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{client_active_pane}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
-  if [ -z "$pane" ]; then
-    pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{pane_id}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+  local pane=""
+  if [ -n "$tty" ]; then
+    pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{client_active_pane}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+    if [ -z "$pane" ]; then
+      pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{pane_id}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+    fi
+  fi
+  if [ -z "$pane" ] && [ -n "$target_pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -Fx -- "$target_pane" >/dev/null; then
+    pane="$target_pane"
   fi
   if [ -z "$pane" ]; then
     printf 'paired tmux client is not attached. Re-run ssh-bin-paste attach on the remote.\n' >&2
@@ -172,6 +182,10 @@ session_score() {
   local target="$1"
   local score=0
   local session command title haystack
+
+  if [ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S' 2>/dev/null || true)" = "$target" ]; then
+    score=$((score + 120))
+  fi
 
   if [ -f "$LAST_SESSION_FILE" ] && [ "$(cat "$LAST_SESSION_FILE" 2>/dev/null || true)" = "$target" ]; then
     score=$((score + 100))
@@ -268,12 +282,28 @@ attach_tmux() {
   remember_session "$target"
   local attach_id tty_name
   attach_id="$(new_id)"
+
+  if [ -n "${TMUX:-}" ]; then
+    local current_session current_client_tty current_pane
+    current_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+    if [ "$current_session" != "$target" ]; then
+      printf 'Already inside tmux session %s. Exit tmux before attaching to %s, or choose the current session.\n' "$current_session" "$target" >&2
+      return 1
+    fi
+    current_client_tty="$(tmux display-message -p '#{client_tty}' 2>/dev/null || true)"
+    current_pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null || printf '%s' "${TMUX_PANE:-}")"
+    write_attach_record "$attach_id" "$target" "$current_client_tty" "$current_pane"
+    write_pairing_request "$attach_id" "$target"
+    printf 'Pairing request created for the current tmux client. If your host is running ssh-bin-paste up, it will use this tmux attachment.\n'
+    return 0
+  fi
+
   tty_name="$(tty 2>/dev/null || true)"
   if [ -z "$tty_name" ]; then
     printf 'ssh-bin-paste attach needs to run from an interactive tty\n' >&2
     return 1
   fi
-  write_attach_record "$attach_id" "$target" "$tty_name"
+  write_attach_record "$attach_id" "$target" "$tty_name" ""
   write_pairing_request "$attach_id" "$target"
   printf 'Pairing request created. If your host is running ssh-bin-paste up, it will use this tmux attachment.\n'
 
