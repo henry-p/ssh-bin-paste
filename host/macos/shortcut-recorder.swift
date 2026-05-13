@@ -2,15 +2,39 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import Darwin
 import Foundation
 
-var defaultShortcut = "Cmd+Shift+V"
+var defaultShortcut = "CMD+SHIFT+V"
 if let index = CommandLine.arguments.firstIndex(of: "--default"), index + 1 < CommandLine.arguments.count {
     defaultShortcut = CommandLine.arguments[index + 1]
 }
 
 var selectedShortcut: String?
 var exitStatus: Int32 = 0
+var originalTerminal: termios?
+
+func configureTerminalForRecording() {
+    var term = termios()
+    guard tcgetattr(STDIN_FILENO, &term) == 0 else {
+        return
+    }
+    originalTerminal = term
+    term.c_lflag &= ~tcflag_t(ECHO | ICANON)
+    withUnsafeMutableBytes(of: &term.c_cc) { bytes in
+        bytes[Int(VMIN)] = 0
+        bytes[Int(VTIME)] = 0
+    }
+    tcflush(STDIN_FILENO, TCIFLUSH)
+    tcsetattr(STDIN_FILENO, TCSANOW, &term)
+}
+
+func restoreTerminal() {
+    tcflush(STDIN_FILENO, TCIFLUSH)
+    if var original = originalTerminal {
+        tcsetattr(STDIN_FILENO, TCSANOW, &original)
+    }
+}
 
 func keyName(for code: CGKeyCode) -> String? {
     switch Int(code) {
@@ -132,6 +156,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
 
 writeStderr("Recording paste command. Press Enter to keep \(defaultShortcut), Esc to cancel.\n")
 writeStderr("Press the new shortcut now.\n")
+configureTerminalForRecording()
 renderCurrent([])
 
 let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
@@ -143,6 +168,7 @@ guard let tap = CGEvent.tapCreate(
     callback: callback,
     userInfo: nil
 ) else {
+    restoreTerminal()
     writeStderr("Could not record shortcut. Grant Accessibility permission to your terminal app, then try again.\n")
     exit(1)
 }
@@ -155,4 +181,5 @@ CFRunLoopRun()
 if let shortcut = selectedShortcut, exitStatus == 0 {
     print(shortcut)
 }
+restoreTerminal()
 exit(exitStatus)

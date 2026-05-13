@@ -23,7 +23,7 @@ CLEANUP_ENABLED="1"
 CLEANUP_MAX_AGE_SECONDS="86400"
 CLEANUP_INTERVAL_SECONDS="300"
 HIJACK_PASTE="0"
-PASTE_SHORTCUT="Cmd+Shift+V"
+PASTE_SHORTCUT="CMD+SHIFT+V"
 REQUEST_AFTER=""
 REQUEST_TOKEN=""
 
@@ -499,14 +499,18 @@ cmd_config() {
 
 main() {
   local cmd="${1:-}"
-  [ $# -gt 0 ] && shift || true
+  if [ -z "$cmd" ]; then
+    usage
+    exit 0
+  fi
+  shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
     arm) cmd_arm "$@" ;;
     paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;
-    help|--help|-h|'') usage ;;
+    help|--help|-h) usage ;;
     *) printf 'unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
   esac
 }
