@@ -6,6 +6,7 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/ssh-bin-paste"
 CONFIG_FILE="$CONFIG_DIR/config.sh"
 CACHE_DIR="$HOME/.cache/ssh-bin-paste"
 STATE_DIR="$CACHE_DIR"
+UP_LOCK_DIR="$STATE_DIR/up.lock"
 ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
 REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
@@ -190,6 +191,38 @@ check_line() {
   if [ "$ok" = "1" ]; then printf 'ok   %s: %s\n' "$label" "$detail"; else printf 'fail %s: %s\n' "$label" "$detail"; return 1; fi
 }
 
+acquire_up_lock() {
+  mkdir -p "$STATE_DIR"
+  if mkdir "$UP_LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$UP_LOCK_DIR/pid"
+    return 0
+  fi
+
+  local existing_pid
+  existing_pid="$(cat "$UP_LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+    printf 'ssh-bin-paste up is already running with pid %s\n' "$existing_pid" >&2
+    return 1
+  fi
+
+  rm -rf "$UP_LOCK_DIR"
+  if mkdir "$UP_LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$UP_LOCK_DIR/pid"
+    return 0
+  fi
+
+  printf 'could not acquire ssh-bin-paste up lock\n' >&2
+  return 1
+}
+
+release_up_lock() {
+  local existing_pid
+  existing_pid="$(cat "$UP_LOCK_DIR/pid" 2>/dev/null || true)"
+  if [ "$existing_pid" = "$$" ]; then
+    rm -rf "$UP_LOCK_DIR"
+  fi
+}
+
 check_requirements() {
   load_config
   parse_remote_opts "$@"
@@ -349,6 +382,8 @@ cmd_paste() {
 cmd_up() {
   ensure_configured
   parse_remote_opts "$@"
+  acquire_up_lock || exit 1
+  trap 'release_up_lock' EXIT INT TERM
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
   if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
