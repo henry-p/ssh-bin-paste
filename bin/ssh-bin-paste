@@ -383,7 +383,7 @@ done"
 }
 
 remote_helper_supports_current_protocol() {
-  [ "$(run_remote_helper_quiet protocol-version 2>/dev/null || true)" = "2" ]
+  [ "$(run_remote_helper_quiet protocol-version 2>/dev/null || true)" = "3" ]
 }
 
 ensure_configured() {
@@ -570,12 +570,17 @@ handle_dropped_local_path() {
 }
 
 drop_watch_loop() {
-  local pane_id typed_path local_path
+  local pane_id typed_path local_path output
+  set +m 2>/dev/null || true
   while true; do
-    run_remote_helper_quiet watch-local-paths 0.5 | while IFS="$(printf '\t')" read -r pane_id typed_path local_path; do
+    output="$(run_remote_helper_quiet scan-local-paths 2>/dev/null || true)"
+    while IFS="$(printf '\t')" read -r pane_id typed_path local_path; do
+      [ -n "$pane_id" ] || continue
       handle_dropped_local_path "$pane_id" "$typed_path" "$local_path" || true
-    done
-    sleep 1
+    done <<EOF2
+$output
+EOF2
+    sleep 0.5
   done
 }
 
@@ -608,7 +613,7 @@ cmd_up() {
   trap 'cleanup_up; exit 143' TERM
   trap 'cleanup_up' EXIT
 
-  drop_watch_loop &
+  (drop_watch_loop) &
   drop_watch_pid="$!"
 
   swift "${args[@]}" &

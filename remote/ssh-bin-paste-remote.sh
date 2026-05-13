@@ -372,7 +372,22 @@ replace_local_path() {
     tmux send-keys -t "$target" BSpace
     i=$((i + 1))
   done
+  remove_leftover_path_slash "$target"
   printf '%s' "$remote_path" | inject "$target"
+}
+
+remove_leftover_path_slash() {
+  local target="$1" cursor_y line trimmed
+  cursor_y="$(tmux display-message -p -t "$target" '#{cursor_y}' 2>/dev/null || printf 0)"
+  case "$cursor_y" in ''|*[!0-9]*) cursor_y=0 ;; esac
+  line="$(tmux capture-pane -p -J -t "$target" -S "$cursor_y" -E "$cursor_y" 2>/dev/null || true)"
+  trimmed="${line%"${line##*[![:space:]]}"}"
+  if [ "${trimmed%"${trimmed#?}"}" = "" ]; then
+    return 0
+  fi
+  if [ "${trimmed: -1}" = "/" ]; then
+    tmux send-keys -t "$target" BSpace
+  fi
 }
 
 cleanup() {
@@ -425,7 +440,7 @@ case "${1:-}" in
     printf '%s\n' "$VERSION"
     ;;
   protocol-version)
-    printf '2\n'
+    printf '3\n'
     ;;
   install-tmux-binding)
     install_tmux_binding
