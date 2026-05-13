@@ -327,6 +327,10 @@ done"
   fi
 }
 
+remote_helper_supports_current_protocol() {
+  run_remote_helper request-arm "__ssh-bin-paste-protocol-check__" >/dev/null 2>&1
+}
+
 ensure_configured() {
   if [ ! -f "$CONFIG_FILE" ]; then
     run_config_wizard
@@ -335,6 +339,10 @@ ensure_configured() {
     printf '\nconfig complete\n'
   fi
   load_config
+  if ! remote_helper_supports_current_protocol; then
+    printf 'remote helper is missing the current paste protocol; updating it now.\n'
+    install_remote_helper
+  fi
 }
 
 extension_for_mime() {
