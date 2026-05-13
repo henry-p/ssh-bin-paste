@@ -16,6 +16,9 @@ struct DaemonConfig {
 }
 
 var config: DaemonConfig!
+let pasteStateQueue = DispatchQueue(label: "ssh-bin-paste.state")
+var pasteInFlight = false
+var lastPasteStartedAt = Date(timeIntervalSince1970: 0)
 
 func valueAfter(_ name: String) -> String? {
     let args = CommandLine.arguments
@@ -51,6 +54,24 @@ func log(_ message: String) {
     fflush(stdout)
 }
 
+func beginPasteOperation() -> Bool {
+    pasteStateQueue.sync {
+        let now = Date()
+        if pasteInFlight || now.timeIntervalSince(lastPasteStartedAt) < 1.5 {
+            return false
+        }
+        pasteInFlight = true
+        lastPasteStartedAt = now
+        return true
+    }
+}
+
+func finishPasteOperation() {
+    pasteStateQueue.sync {
+        pasteInFlight = false
+    }
+}
+
 func frontmostAppIsAllowed() -> Bool {
     guard let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
         return false
@@ -74,6 +95,9 @@ func sendRemotePasteSignal() {
 func runPasteCommand() {
     sendRemotePasteSignal()
     DispatchQueue.global(qos: .userInitiated).async {
+        defer {
+            finishPasteOperation()
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if let sshCommand = config.sshCommand {
@@ -83,7 +107,12 @@ func runPasteCommand() {
         }
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError
-        try? process.run()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            fputs("failed to run paste command: \(error.localizedDescription)\n", stderr)
+        }
     }
 }
 
@@ -116,6 +145,10 @@ let hotKeyCallback: EventHandlerUPP = { _, event, _ in
     )
     if status == noErr && hotKeyID.id == 1 {
         if clipboardHasSupportedPayload() {
+            guard beginPasteOperation() else {
+                log("Cmd+Shift+V duplicate ignored; paste is already running.")
+                return noErr
+            }
             log("Cmd+Shift+V detected; asking remote tmux for the focused pane.")
             runPasteCommand()
         } else {
