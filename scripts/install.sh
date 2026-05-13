@@ -18,7 +18,7 @@ need() {
 
 download() {
   local url="$1" dest="$2"
-  curl -fsSL "$url" -o "$dest"
+  curl -fsSL -H 'Cache-Control: no-cache' "$url" -o "$dest"
 }
 
 need curl
