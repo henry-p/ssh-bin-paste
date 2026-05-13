@@ -146,7 +146,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     }
     guard let shortcut = shortcutString(flags: event.flags, keyCode: keyCode) else {
-        writeStderr("\rUse CMD plus a normal key.                    ")
+        writeStderr("\rUse CMD, optionally with other modifiers, plus a normal key.                    ")
         return nil
     }
     writeStderr("\nRecorded \(shortcut).\n")
