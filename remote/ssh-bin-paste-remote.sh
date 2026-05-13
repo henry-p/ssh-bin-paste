@@ -443,7 +443,7 @@ case "${1:-}" in
     printf '%s\n' "$VERSION"
     ;;
   protocol-version)
-    printf '4\n'
+    printf '1\n'
     ;;
   install-tmux-binding)
     install_tmux_binding
