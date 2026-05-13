@@ -5,6 +5,8 @@ Paste images and other supported local clipboard payloads into remote Claude or 
 Keep using your normal SSH terminal.
 The tool uses a `tmux` key binding to detect the focused remote pane, then pastes the uploaded file path into Claude or Codex.
 
+![ssh-bin-paste demo](docs/ssh-bin-paste-demo.gif)
+
 ## Quickstart
 ### 1. Install
 ```sh

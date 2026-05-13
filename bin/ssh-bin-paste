@@ -234,6 +234,23 @@ check_line() {
   if [ "$ok" = "1" ]; then printf 'ok   %s: %s\n' "$label" "$detail"; else printf 'fail %s: %s\n' "$label" "$detail"; return 1; fi
 }
 
+progress_bar() {
+  local percent="$1" label="$2" width=24 filled empty
+  filled=$((percent * width / 100))
+  empty=$((width - filled))
+  if [ -t 1 ]; then
+    printf '\r\033[2Kuploading clipboard payload ['
+    printf '%*s' "$filled" '' | tr ' ' '#'
+    printf '%*s' "$empty" '' | tr ' ' '-'
+    printf '] %3d%% %s' "$percent" "$label"
+    if [ "$percent" -ge 100 ]; then
+      printf '\n'
+    fi
+  else
+    printf 'uploading clipboard payload %3d%% %s\n' "$percent" "$label"
+  fi
+}
+
 acquire_up_lock() {
   mkdir -p "$STATE_DIR"
   if mkdir "$UP_LOCK_DIR" 2>/dev/null; then
@@ -446,17 +463,23 @@ cmd_paste() {
     printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
     exit 1
   }
+  progress_bar 10 'target detected'
   output_path="$(mktemp -t ssh-bin-paste.XXXXXX).png"
   capture="$(swift "$CLIPBOARD_HELPER" --output "$output_path")"
   local_path="$(printf '%s\n' "$capture" | json_field path)"
   mime="$(printf '%s\n' "$capture" | json_field mimeType)"
   ext="$(extension_for_mime "$mime")"
+  progress_bar 30 'clipboard captured'
   cache="$(run_remote_helper ensure-cache "$REMOTE_CACHE_DIR")"
+  progress_bar 45 'remote cache ready'
   now="$(date +%s)"
   uuid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
+  progress_bar 60 'uploading'
   run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
+  progress_bar 85 'injecting'
   printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
+  progress_bar 100 'pasted'
   printf 'pasted %s into %s\n' "$remote_path" "$target"
 }
 
