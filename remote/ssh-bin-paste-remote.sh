@@ -6,9 +6,7 @@ DEFAULT_CACHE_DIR="${SSH_BIN_PASTE_CACHE_DIR:-$HOME/.cache/ssh-bin-paste/files}"
 STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
 CLEANUP_PID_FILE="$STATE_DIR/cleanup-worker.pid"
 CLEANUP_LOG_FILE="$STATE_DIR/cleanup-worker.log"
-LAST_SESSION_FILE="$STATE_DIR/last-session"
-ATTACH_DIR="$STATE_DIR/attachments"
-PAIRING_DIR="$STATE_DIR/pairing-requests"
+REQUEST_DIR="$STATE_DIR/paste-requests"
 
 usage() {
   cat >&2 <<'EOF'
@@ -16,11 +14,10 @@ usage: ssh-bin-paste-remote <command> [args]
 
 commands:
   version
-  attach
-  pairing-next
-  pairing-consume <attach-id>
-  resolve-attach <attach-id>
-  remember-session <tmux-session>
+  install-tmux-binding
+  request <client-tty> <pane-id> [tmux-session]
+  request-next [created-after]
+  request-consume <request-id>
   ensure-cache [cache-dir]
   inject <target-pane>
   cleanup-loop [cache-dir] [max-age-seconds] [interval-seconds]
@@ -57,257 +54,139 @@ new_id() {
   fi
 }
 
-remember_session() {
-  local session="${1:-}"
-  if [ -z "$session" ]; then
-    printf 'missing tmux session\n' >&2
-    return 2
-  fi
-  mkdir -p "$STATE_DIR"
-  printf '%s\n' "$session" > "$LAST_SESSION_FILE"
-}
-
-write_attach_record() {
-  local attach_id="$1"
-  local session="$2"
-  local tty_name="$3"
-  local target_pane="${4:-}"
+write_request_record() {
+  local request_id="$1"
+  local client_tty="$2"
+  local pane_id="$3"
+  local tmux_session="$4"
   local created_at
   created_at="$(date +%s)"
-  mkdir -p "$ATTACH_DIR"
+  mkdir -p "$REQUEST_DIR"
   {
-    printf 'attach_id='
-    quote_sh "$attach_id"
+    printf 'request_id='
+    quote_sh "$request_id"
     printf '\n'
     printf 'tmux_session='
-    quote_sh "$session"
+    quote_sh "$tmux_session"
     printf '\n'
-    printf 'tty='
-    quote_sh "$tty_name"
+    printf 'client_tty='
+    quote_sh "$client_tty"
     printf '\n'
-    printf 'target_pane='
-    quote_sh "$target_pane"
+    printf 'pane_id='
+    quote_sh "$pane_id"
     printf '\n'
     printf 'created_at='
     quote_sh "$created_at"
     printf '\n'
-  } > "$ATTACH_DIR/$attach_id"
+  } > "$REQUEST_DIR/$request_id"
 }
 
-write_pairing_request() {
-  local attach_id="$1"
-  local session="$2"
-  local created_at
-  created_at="$(date +%s)"
-  mkdir -p "$PAIRING_DIR"
-  {
-    printf 'attach_id='
-    quote_sh "$attach_id"
-    printf '\n'
-    printf 'tmux_session='
-    quote_sh "$session"
-    printf '\n'
-    printf 'created_at='
-    quote_sh "$created_at"
-    printf '\n'
-  } > "$PAIRING_DIR/$attach_id"
-}
-
-pairing_next() {
-  mkdir -p "$PAIRING_DIR"
-  local newest
-  newest="$(find "$PAIRING_DIR" -maxdepth 1 -type f -print 2>/dev/null | while IFS= read -r file; do
-    printf '%s\t%s\n' "$(stat -c %Y "$file" 2>/dev/null || stat -f %m "$file" 2>/dev/null || printf 0)" "$file"
-  done | sort -rn | head -n 1 | cut -f2-)"
-  [ -n "$newest" ] || return 1
-  cat "$newest"
-}
-
-pairing_consume() {
-  local attach_id="${1:-}"
-  if [ -z "$attach_id" ]; then
-    printf 'missing attach id\n' >&2
+request_paste() {
+  local client_tty="${1:-}"
+  local pane_id="${2:-}"
+  local tmux_session="${3:-}"
+  if [ -z "$pane_id" ]; then
+    printf 'missing pane id\n' >&2
     return 2
   fi
-  rm -f "$PAIRING_DIR/$attach_id"
+  if [ -z "$tmux_session" ] && command -v tmux >/dev/null 2>&1; then
+    tmux_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
+  fi
+  local request_id
+  request_id="$(new_id)"
+  write_request_record "$request_id" "$client_tty" "$pane_id" "$tmux_session"
 }
 
-resolve_attach() {
-  local attach_id="${1:-}"
-  if [ -z "$attach_id" ]; then
-    printf 'missing attach id\n' >&2
-    return 2
-  fi
-
-  local record="$ATTACH_DIR/$attach_id"
-  if [ ! -f "$record" ]; then
-    printf 'stale attachment. Keep ssh-bin-paste up running on your host and run ssh-bin-paste attach on the remote again.\n' >&2
-    return 1
-  fi
-
-  local tmux_session=""
-  local tty=""
-  local target_pane=""
-  # shellcheck disable=SC1090
-  . "$record"
-
-  if [ -z "$tmux_session" ] || { [ -z "$tty" ] && [ -z "$target_pane" ]; }; then
-    printf 'invalid attachment record\n' >&2
-    return 1
-  fi
-  if ! tmux has-session -t "$tmux_session" 2>/dev/null; then
-    printf 'paired tmux session no longer exists. Run ssh-bin-paste attach again.\n' >&2
-    return 1
-  fi
-
-  local pane=""
-  if [ -n "$tty" ]; then
-    pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{client_active_pane}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
-    if [ -z "$pane" ]; then
-      pane="$(tmux list-clients -t "$tmux_session" -F '#{client_tty}	#{pane_id}' 2>/dev/null | awk -F '\t' -v tty="$tty" '$1 == tty { print $2; exit }')"
+request_next() {
+  local after="${1:-0}"
+  local newest_file=""
+  local newest_created=0
+  local file request_id tmux_session client_tty pane_id created_at
+  mkdir -p "$REQUEST_DIR"
+  for file in "$REQUEST_DIR"/*; do
+    [ -f "$file" ] || continue
+    request_id=""
+    tmux_session=""
+    client_tty=""
+    pane_id=""
+    created_at=0
+    # shellcheck disable=SC1090
+    . "$file"
+    case "$created_at" in ''|*[!0-9]*) created_at=0 ;; esac
+    if [ "$created_at" -ge "$after" ] && [ "$created_at" -ge "$newest_created" ]; then
+      newest_created="$created_at"
+      newest_file="$file"
     fi
-  fi
-  if [ -z "$pane" ] && [ -n "$target_pane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -Fx -- "$target_pane" >/dev/null; then
-    pane="$target_pane"
-  fi
-  if [ -z "$pane" ]; then
-    printf 'paired tmux client is not attached. Re-run ssh-bin-paste attach on the remote.\n' >&2
-    return 1
-  fi
-
-  printf '%s\n' "$pane"
-}
-
-session_score() {
-  local target="$1"
-  local score=0
-  local session command title haystack
-
-  if [ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S' 2>/dev/null || true)" = "$target" ]; then
-    score=$((score + 120))
-  fi
-
-  if [ -f "$LAST_SESSION_FILE" ] && [ "$(cat "$LAST_SESSION_FILE" 2>/dev/null || true)" = "$target" ]; then
-    score=$((score + 100))
-  fi
-
-  case "$target" in
-    agent) score=$((score + 20)) ;;
-    *codex*|*claude*|*agent*) score=$((score + 8)) ;;
-  esac
-
-  while IFS=$'\t' read -r session command title; do
-    [ "$session" = "$target" ] || continue
-    haystack="$(printf '%s %s %s' "$session" "$command" "$title" | tr '[:upper:]' '[:lower:]')"
-    case "$haystack" in *codex*) score=$((score + 12)) ;; esac
-    case "$haystack" in *claude*) score=$((score + 12)) ;; esac
-    case "$haystack" in *agent*) score=$((score + 4)) ;; esac
-  done < <(tmux list-panes -a -F '#{session_name}	#{pane_current_command}	#{pane_title}' 2>/dev/null || true)
-
-  printf '%s\n' "$score"
-}
-
-rank_sessions() {
-  local session windows attached score
-  while IFS=$'\t' read -r session windows attached; do
-    [ -n "$session" ] || continue
-    score="$(session_score "$session")"
-    printf '%s\t%s\t%s\t%s\n' "$score" "$session" "$windows" "$attached"
-  done < <(tmux list-sessions -F '#{session_name}	#{session_windows}	#{session_attached}' 2>/dev/null || true) \
-    | sort -rn -k1,1
-}
-
-attach_tmux() {
-  if ! command -v tmux >/dev/null 2>&1; then
-    printf 'tmux is not installed on this host\n' >&2
-    return 1
-  fi
-  if [ ! -t 0 ] || [ ! -t 1 ]; then
-    printf 'ssh-bin-paste attach requires an interactive SSH terminal\n' >&2
-    return 1
-  fi
-
-  local sessions=()
-  local scores=()
-  local windows=()
-  local attached=()
-  local score session window_count attached_count
-
-  while IFS=$'\t' read -r score session window_count attached_count; do
-    sessions+=("$session")
-    scores+=("$score")
-    windows+=("$window_count")
-    attached+=("$attached_count")
-  done < <(rank_sessions)
-
-  if [ "${#sessions[@]}" -eq 0 ]; then
-    printf 'No tmux sessions found. Start or resume your agent inside tmux first.\n' >&2
-    return 1
-  fi
-
-  local default="${sessions[0]}"
-  if [ "${scores[0]}" -gt 0 ]; then
-    printf 'Suggested tmux session: %s\n' "$default"
-  else
-    printf 'No obvious agent session found. Choose a tmux session to attach.\n'
-  fi
-  printf '\n'
-  printf 'Available tmux sessions:\n'
-
-  local i label
-  for i in "${!sessions[@]}"; do
-    label=""
-    if [ "$i" -eq 0 ] && [ "${scores[0]}" -gt 0 ]; then
-      label=" suggested"
-    fi
-    printf '  %s. %s%s (windows=%s attached=%s)\n' "$((i + 1))" "${sessions[$i]}" "$label" "${windows[$i]}" "${attached[$i]}"
   done
+  [ -n "$newest_file" ] || return 1
+  cat "$newest_file"
+}
 
-  printf '\nAttach to tmux session [%s]: ' "$default"
-  local answer target
-  IFS= read -r answer
-  if [ -z "$answer" ]; then
-    target="$default"
-  elif [[ "$answer" =~ ^[0-9]+$ ]] && [ "$answer" -ge 1 ] && [ "$answer" -le "${#sessions[@]}" ]; then
-    target="${sessions[$((answer - 1))]}"
-  else
-    target="$answer"
+request_consume() {
+  local request_id="${1:-}"
+  if [ -z "$request_id" ]; then
+    printf 'missing request id\n' >&2
+    return 2
   fi
+  rm -f "$REQUEST_DIR/$request_id"
+}
 
-  if ! tmux has-session -t "$target" 2>/dev/null; then
-    printf 'tmux session not found: %s\n' "$target" >&2
-    return 1
-  fi
+helper_self_path() {
+  case "$0" in
+    /*) printf '%s\n' "$0" ;;
+    */*) printf '%s/%s\n' "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)" "$(basename -- "$0")" ;;
+    *) command -v "$0" 2>/dev/null || printf '%s\n' "$0" ;;
+  esac
+}
 
-  remember_session "$target"
-  local attach_id tty_name
-  attach_id="$(new_id)"
+install_tmux_binding() {
+  local conf="$HOME/.tmux.conf"
+  local helper command binding tmp existing_had_block=0
+  helper="$(helper_self_path)"
+  command="$helper request \"#{client_tty}\" \"#{pane_id}\" \"#{session_name}\""
+  binding="bind-key -n C-] run-shell -b $(quote_sh "$command")"
 
-  if [ -n "${TMUX:-}" ]; then
-    local current_session current_client_tty current_pane
-    current_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
-    if [ "$current_session" != "$target" ]; then
-      printf 'Already inside tmux session %s. Exit tmux before attaching to %s, or choose the current session.\n' "$current_session" "$target" >&2
-      return 1
-    fi
-    current_client_tty="$(tmux display-message -p '#{client_tty}' 2>/dev/null || true)"
-    current_pane="$(tmux display-message -p '#{pane_id}' 2>/dev/null || printf '%s' "${TMUX_PANE:-}")"
-    write_attach_record "$attach_id" "$target" "$current_client_tty" "$current_pane"
-    write_pairing_request "$attach_id" "$target"
-    printf 'Pairing request created for the current tmux client. If your host is running ssh-bin-paste up, it will use this tmux attachment.\n'
+  if [ -f "$conf" ] && grep -Fx -- "$binding" "$conf" >/dev/null; then
+    command -v tmux >/dev/null 2>&1 && tmux source-file "$conf" 2>/dev/null || true
+    printf 'tmux binding C-] already installed in %s\n' "$conf"
     return 0
   fi
 
-  tty_name="$(tty 2>/dev/null || true)"
-  if [ -z "$tty_name" ]; then
-    printf 'ssh-bin-paste attach needs to run from an interactive tty\n' >&2
+  tmp="$(mktemp)"
+  if [ -f "$conf" ]; then
+    if grep -Fx -- '# >>> ssh-bin-paste' "$conf" >/dev/null; then
+      existing_had_block=1
+    fi
+    awk '
+      /^# >>> ssh-bin-paste$/ { skip = 1; next }
+      /^# <<< ssh-bin-paste$/ { skip = 0; next }
+      !skip { print }
+    ' "$conf" > "$tmp"
+  fi
+  {
+    printf '\n# >>> ssh-bin-paste\n'
+    printf '%s\n' "$binding"
+    printf '# <<< ssh-bin-paste\n'
+  } >> "$tmp"
+  mv "$tmp" "$conf"
+  command -v tmux >/dev/null 2>&1 && tmux source-file "$conf" 2>/dev/null || true
+  if [ "$existing_had_block" = "1" ]; then
+    printf 'tmux binding C-] updated in %s\n' "$conf"
+  else
+    printf 'tmux binding C-] added to %s\n' "$conf"
+  fi
+}
+
+validate_pane() {
+  local pane_id="${1:-}"
+  if [ -z "$pane_id" ]; then
+    printf 'missing pane id\n' >&2
+    return 2
+  fi
+  if ! tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -Fx -- "$pane_id" >/dev/null; then
+    printf 'requested tmux pane no longer exists: %s\n' "$pane_id" >&2
     return 1
   fi
-  write_attach_record "$attach_id" "$target" "$tty_name" ""
-  write_pairing_request "$attach_id" "$target"
-  printf 'Pairing request created. If your host is running ssh-bin-paste up, it will use this tmux attachment.\n'
-
-  exec tmux attach-session -t "$target"
 }
 
 inject() {
@@ -316,6 +195,7 @@ inject() {
     printf 'missing target pane\n' >&2
     return 2
   fi
+  validate_pane "$target"
 
   local tmp
   tmp="$(mktemp)"
@@ -374,23 +254,20 @@ case "${1:-}" in
   version)
     printf '%s\n' "$VERSION"
     ;;
-  attach)
-    attach_tmux
+  install-tmux-binding)
+    install_tmux_binding
     ;;
-  pairing-next)
-    pairing_next
-    ;;
-  pairing-consume)
+  request)
     shift
-    pairing_consume "${1:-}"
+    request_paste "${1:-}" "${2:-}" "${3:-}"
     ;;
-  resolve-attach)
+  request-next)
     shift
-    resolve_attach "${1:-}"
+    request_next "${1:-}"
     ;;
-  remember-session)
+  request-consume)
     shift
-    remember_session "${1:-}"
+    request_consume "${1:-}"
     ;;
   ensure-cache)
     shift

@@ -10,7 +10,6 @@ ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
 REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
 PASTE_UP="$ASSET_DIR/paste-up.swift"
-PAIRING_FILE="$STATE_DIR/current-pairing"
 
 HOST="example-remote"
 SSH_COMMAND=""
@@ -22,6 +21,7 @@ CLEANUP_ENABLED="1"
 CLEANUP_MAX_AGE_SECONDS="86400"
 CLEANUP_INTERVAL_SECONDS="300"
 HIJACK_PASTE="0"
+REQUEST_AFTER=""
 
 usage() {
   cat <<'USAGE'
@@ -29,7 +29,7 @@ usage: ssh-bin-paste <command> [args]
 
 commands:
   config             configure SSH and install the remote helper
-  up                 run the paste shortcut and auto-pair with remote attach
+  up                 run the paste shortcut listener
   version            print version
 USAGE
 }
@@ -109,34 +109,12 @@ run_config_wizard() {
   printf '\nwrote %s\n' "$CONFIG_FILE" >/dev/tty
 }
 
-save_pairing() {
-  local attach_id="$1" tmux_session="$2" created_at="$3"
-  mkdir -p "$STATE_DIR"
-  {
-    printf '# ssh-bin-paste current pairing\n'
-    write_config_value PAIR_HOST "$HOST"
-    write_config_value PAIR_SSH_COMMAND "$SSH_COMMAND"
-    write_config_value PAIR_ATTACH_ID "$attach_id"
-    write_config_value PAIR_TMUX_SESSION "$tmux_session"
-    write_config_value PAIR_CREATED_AT "$created_at"
-  } > "$PAIRING_FILE"
-}
-
-load_pairing_target() {
-  [ -f "$PAIRING_FILE" ] || return 1
-  # shellcheck disable=SC1090
-  . "$PAIRING_FILE"
-  [ -n "${PAIR_ATTACH_ID:-}" ] || return 1
-  HOST="${PAIR_HOST:-$HOST}"
-  SSH_COMMAND="${PAIR_SSH_COMMAND:-}"
-  return 0
-}
-
 parse_remote_opts() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --host) HOST="$2"; shift 2 ;;
       --ssh) SSH_COMMAND="$2"; shift 2 ;;
+      --request-after) REQUEST_AFTER="$2"; shift 2 ;;
       --hijack-paste) HIJACK_PASTE="1"; shift ;;
       --*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
       *) EXTRA_ARG="$1"; shift ;;
@@ -289,6 +267,7 @@ $profile_block
 SBP_PATH_EOF
 done"
   printf 'installed %s and %s on %s (%s)\n' "$REMOTE_HELPER_PATH" "$wrapper_path" "${SSH_COMMAND:-ssh $HOST}" "$verify"
+  run_remote_helper install-tmux-binding | sed 's/^/remote /'
   if [ "$CLEANUP_ENABLED" = "1" ]; then
     run_remote_helper cleanup-start "$REMOTE_CACHE_DIR" "$CLEANUP_MAX_AGE_SECONDS" "$CLEANUP_INTERVAL_SECONDS" | sed 's/^/cleanup worker /'
   fi
@@ -302,34 +281,6 @@ ensure_configured() {
     printf '\nconfig complete\n'
   fi
   load_config
-}
-
-pair_watch_loop() {
-  printf 'Waiting for remote attach on %s. In SSH, run: ssh-bin-paste attach\n' "${SSH_COMMAND:-$HOST}"
-
-  local request attach_id tmux_session created_at
-  while true; do
-    request="$(run_remote_helper pairing-next 2>/dev/null || true)"
-    if [ -n "$request" ]; then
-      attach_id="$(printf '%s\n' "$request" | sed -n "s/^attach_id='\(.*\)'$/\1/p" | sed "s/'\\\\''/'/g")"
-      tmux_session="$(printf '%s\n' "$request" | sed -n "s/^tmux_session='\(.*\)'$/\1/p" | sed "s/'\\\\''/'/g")"
-      created_at="$(printf '%s\n' "$request" | sed -n "s/^created_at='\(.*\)'$/\1/p")"
-      if [ -n "$attach_id" ] && [ -n "$tmux_session" ]; then
-        save_pairing "$attach_id" "$tmux_session" "${created_at:-$(date +%s)}"
-        run_remote_helper pairing-consume "$attach_id" >/dev/null 2>&1 || true
-        printf 'Paired %s -> %s.\n' "${SSH_COMMAND:-$HOST}" "$tmux_session"
-      fi
-    fi
-    sleep 2
-  done
-}
-
-resolve_target_pane() {
-  if [ -n "${PAIR_ATTACH_ID:-}" ]; then
-    run_remote_helper resolve-attach "$PAIR_ATTACH_ID"
-    return
-  fi
-  return 1
 }
 
 extension_for_mime() {
@@ -347,15 +298,41 @@ json_field() {
   sed -n "s/.*\"$field\":\"\([^\"]*\)\".*/\1/p" | sed 's#\\/#/#g; s#\\"#"#g; s#\\\\#\\#g'
 }
 
+record_field() {
+  local record="$1" field="$2"
+  printf '%s\n' "$record" | sed -n "s/^$field='\(.*\)'$/\1/p" | sed "s/'\\\\''/'/g"
+}
+
+wait_for_target_request() {
+  local after="${1:-0}"
+  local deadline=$((SECONDS + 5))
+  local request request_id pane_id
+  while [ "$SECONDS" -le "$deadline" ]; do
+    request="$(run_remote_helper request-next "$after" 2>/dev/null || true)"
+    if [ -n "$request" ]; then
+      request_id="$(record_field "$request" request_id)"
+      pane_id="$(record_field "$request" pane_id)"
+      if [ -n "$request_id" ] && [ -n "$pane_id" ]; then
+        run_remote_helper request-consume "$request_id" >/dev/null 2>&1 || true
+        printf '%s\n' "$pane_id"
+        return 0
+      fi
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 cmd_paste() {
   load_config
   parse_remote_opts "$@"
-  load_pairing_target || {
-      printf 'No paired remote session. Keep ssh-bin-paste up running on your host, then run ssh-bin-paste attach on the remote.\n' >&2
-    exit 1
-  }
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
   local output_path capture local_path mime ext cache remote_path target now uuid
+  REQUEST_AFTER="${REQUEST_AFTER:-$(( $(date +%s) - 5 ))}"
+  target="$(wait_for_target_request "$REQUEST_AFTER")" || {
+    printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
+    exit 1
+  }
   output_path="$(mktemp -t ssh-bin-paste.XXXXXX).png"
   capture="$(swift "$CLIPBOARD_HELPER" --output "$output_path")"
   local_path="$(printf '%s\n' "$capture" | json_field path)"
@@ -366,8 +343,6 @@ cmd_paste() {
   uuid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
   remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
   run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
-  target="$(resolve_target_pane)"
-  [ -n "$target" ] || { printf 'Paired remote session is stale. Keep ssh-bin-paste up running, then run ssh-bin-paste attach again.\n' >&2; exit 1; }
   printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
   printf 'pasted %s into %s\n' "$remote_path" "$target"
 }
@@ -379,9 +354,6 @@ cmd_up() {
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
   if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
-  pair_watch_loop &
-  local watcher_pid="$!"
-  trap 'kill "$watcher_pid" 2>/dev/null || true' EXIT INT TERM
   swift "${args[@]}"
 }
 

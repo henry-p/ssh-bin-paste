@@ -52,8 +52,6 @@ ssh-bin-paste installed.
 Start the host shortcut and configure on first run:
   ssh-bin-paste up
 
-After connecting to your remote:
-  ssh-bin-paste attach
-
-Then copy a supported payload locally and press Cmd+Shift+V.
+Then connect to your remote normally, run your agent inside tmux,
+copy a supported payload locally, focus the agent, and press Cmd+Shift+V.
 EOF2

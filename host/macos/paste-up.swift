@@ -49,14 +49,29 @@ func frontmostAppIsAllowed() -> Bool {
     return config.allowlistedApps.contains(bundleId)
 }
 
+func sendRemotePasteSignal() {
+    let source = CGEventSource(stateID: .combinedSessionState)
+    let keyCode = CGKeyCode(kVK_ANSI_RightBracket)
+    let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+    let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+    down?.flags = .maskControl
+    up?.flags = .maskControl
+    down?.post(tap: .cghidEventTap)
+    usleep(30_000)
+    up?.post(tap: .cghidEventTap)
+    usleep(150_000)
+}
+
 func runPasteCommand() {
+    let requestAfter = String(Int(Date().timeIntervalSince1970) - 1)
+    sendRemotePasteSignal()
     DispatchQueue.global(qos: .userInitiated).async {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if let sshCommand = config.sshCommand {
-            process.arguments = [config.command, "paste", "--ssh", sshCommand]
+            process.arguments = [config.command, "paste", "--request-after", requestAfter, "--ssh", sshCommand]
         } else {
-            process.arguments = [config.command, "paste", "--host", config.host]
+            process.arguments = [config.command, "paste", "--request-after", requestAfter, "--host", config.host]
         }
         try? process.run()
     }
@@ -176,6 +191,6 @@ installDedicatedShortcut()
 if config.hijackPaste {
     installPasteHijackTap()
 }
-print("ssh-bin-paste up running. Cmd+Shift+V pastes supported clipboard payloads; paste hijack is \(config.hijackPaste ? "on" : "off").")
+print("ssh-bin-paste up running. Cmd+Shift+V sends Ctrl+] to the focused tmux pane, then pastes supported clipboard payloads; paste hijack is \(config.hijackPaste ? "on" : "off").")
 fflush(stdout)
 _ = carbonRunApplicationEventLoop()
