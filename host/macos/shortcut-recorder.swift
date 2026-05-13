@@ -112,6 +112,7 @@ func renderCurrent(_ flags: CGEventFlags) {
     if names.isEmpty {
         replaceStatusLine("New shortcut: ")
         writeStderr("(Press [Enter] to keep [\(defaultShortcut)])")
+        writeStderr("\r\u{001B}[14C")
     } else {
         replaceStatusLine("New shortcut: \(names.joined(separator: "+"))")
     }
