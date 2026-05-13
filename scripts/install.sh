@@ -25,7 +25,7 @@ need curl
 need ssh
 need swift
 
-mkdir -p "$BIN_DIR" "$ASSET_DIR"
+mkdir -p "$BIN_DIR" "$ASSET_DIR/host/macos"
 
 log "installing ssh-bin-paste to $BIN_DIR"
 download "$BASE_URL/bin/ssh-bin-paste" "$BIN_DIR/ssh-bin-paste"
@@ -36,8 +36,9 @@ download "$BASE_URL/remote/ssh-bin-paste-remote.sh" "$ASSET_DIR/ssh-bin-paste-re
 download "$BASE_URL/host/macos/clipboard-capture.swift" "$ASSET_DIR/clipboard-capture.swift"
 download "$BASE_URL/host/macos/paste-up.swift" "$ASSET_DIR/paste-up.swift"
 download "$BASE_URL/host/macos/shortcut-recorder.swift" "$ASSET_DIR/shortcut-recorder.swift"
+download "$BASE_URL/host/macos/service.sh" "$ASSET_DIR/host/macos/service.sh"
 chmod 0644 "$ASSET_DIR/clipboard-capture.swift" "$ASSET_DIR/paste-up.swift" "$ASSET_DIR/shortcut-recorder.swift"
-chmod 0755 "$ASSET_DIR/ssh-bin-paste-remote.sh"
+chmod 0755 "$ASSET_DIR/ssh-bin-paste-remote.sh" "$ASSET_DIR/host/macos/service.sh"
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;

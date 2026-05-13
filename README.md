@@ -32,6 +32,10 @@ or
 **Drag & drop**
 → The file will be pasted as if being on your host!
 
+## Want it as always-on background service?
+`ssh-bin-paste service install` installs a `launchd` (macOS) service.
+Windows/Linux support coming soon.
+
 ## Commands
 | Command | Where | Purpose |
 | --- | --- | --- |
