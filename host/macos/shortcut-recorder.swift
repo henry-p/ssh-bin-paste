@@ -103,10 +103,14 @@ func writeStderr(_ text: String) {
     FileHandle.standardError.write(Data(text.utf8))
 }
 
+func replaceStatusLine(_ text: String) {
+    writeStderr("\r\u{001B}[2K\(text)")
+}
+
 func renderCurrent(_ flags: CGEventFlags) {
     let names = modifierNames(flags)
     let current = names.isEmpty ? "(press shortcut)" : names.joined(separator: "+")
-    writeStderr("\rCurrent: \(current)                    ")
+    replaceStatusLine("Current: \(current)")
 }
 
 func finish(_ shortcut: String, status: Int32 = 0) {
@@ -146,7 +150,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     }
     guard let shortcut = shortcutString(flags: event.flags, keyCode: keyCode) else {
-        writeStderr("\rUse CMD, optionally with other modifiers, plus a normal key.                    ")
+        replaceStatusLine("Use CMD, optionally with other modifiers, plus a normal key.")
         return nil
     }
     writeStderr("\nRecorded \(shortcut).\n")
