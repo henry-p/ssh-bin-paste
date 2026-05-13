@@ -225,6 +225,25 @@ release_up_lock() {
   fi
 }
 
+stop_existing_host_processes() {
+  local pids
+  pids="$(ps axww -o pid=,command= | awk -v self="$$" '
+    $1 == self { next }
+    /[s]sh-bin-paste up/ ||
+    /[s]sh-bin-paste paste / ||
+    /[s]sh-bin-paste arm / ||
+    /[p]aste-up\.swift/ ||
+    /[c]lipboard-capture\.swift/ { print $1 }
+  ')"
+  [ -n "$pids" ] || return 0
+
+  printf 'stopping existing ssh-bin-paste listener processes: %s\n' "$(printf '%s' "$pids" | tr '\n' ' ')" >&2
+  kill $pids 2>/dev/null || true
+  sleep 1
+  kill -9 $pids 2>/dev/null || true
+  rm -rf "$UP_LOCK_DIR"
+}
+
 check_requirements() {
   load_config
   parse_remote_opts "$@"
@@ -395,6 +414,7 @@ cmd_paste() {
 cmd_up() {
   ensure_configured
   parse_remote_opts "$@"
+  stop_existing_host_processes
   acquire_up_lock || exit 1
   trap 'release_up_lock' EXIT INT TERM
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
