@@ -100,30 +100,23 @@ validate_shortcut() {
 }
 
 prompt_paste_shortcut() {
-  local default="$1" answer recorded
+  local default="$1" recorded
   while true; do
-    printf 'Paste command [%s] (Enter to keep, type "record" to capture): ' "$default" >/dev/tty
-    IFS= read -r answer </dev/tty
-    answer="${answer:-$default}"
-    case "$answer" in
-      record|r)
-        if [ ! -f "$SHORTCUT_RECORDER" ]; then
-          printf 'missing asset: %s\n' "$SHORTCUT_RECORDER" >/dev/tty
-          continue
-        fi
-        if recorded="$(swift "$SHORTCUT_RECORDER" --default "$default" </dev/tty)"; then
-          answer="$recorded"
-        else
-          printf 'Shortcut recording canceled.\n' >/dev/tty
-          continue
-        fi
-        ;;
-    esac
-    if validate_shortcut "$answer"; then
-      printf '%s\n' "$answer"
+    printf 'Paste command [%s]\n' "$default" >/dev/tty
+    if [ ! -f "$SHORTCUT_RECORDER" ]; then
+      printf 'missing asset: %s\n' "$SHORTCUT_RECORDER" >/dev/tty
+      printf '%s\n' "$default"
       return 0
     fi
-    printf 'Paste command must look like Cmd+Shift+V.\n' >/dev/tty
+    if recorded="$(swift "$SHORTCUT_RECORDER" --default "$default" </dev/tty)"; then
+      if validate_shortcut "$recorded"; then
+        printf '%s\n' "$recorded"
+        return 0
+      fi
+      printf 'Paste command must look like Cmd+Shift+V.\n' >/dev/tty
+    else
+      printf 'Shortcut recording canceled.\n' >/dev/tty
+    fi
   done
 }
 
