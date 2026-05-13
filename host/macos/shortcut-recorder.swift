@@ -109,10 +109,12 @@ func replaceStatusLine(_ text: String) {
 
 func renderCurrent(_ flags: CGEventFlags) {
     let names = modifierNames(flags)
-    let current = names.isEmpty
-        ? "(Press [Enter] to keep [\(defaultShortcut)])"
-        : names.joined(separator: "+")
-    replaceStatusLine("New shortcut: \(current)")
+    if names.isEmpty {
+        replaceStatusLine("New shortcut: ")
+        writeStderr("(Press [Enter] to keep [\(defaultShortcut)])")
+    } else {
+        replaceStatusLine("New shortcut: \(names.joined(separator: "+"))")
+    }
 }
 
 func finish(_ shortcut: String, status: Int32 = 0) {
