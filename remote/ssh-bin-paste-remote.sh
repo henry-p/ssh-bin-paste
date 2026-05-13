@@ -98,7 +98,11 @@ request_paste() {
 }
 
 request_next() {
-  local after="${1:-0}"
+  local after="${1:-}"
+  if [ -z "$after" ]; then
+    after="$(($(date +%s) - 15))"
+  fi
+  case "$after" in ''|*[!0-9]*) after=0 ;; esac
   local newest_file=""
   local newest_created=0
   local file request_id tmux_session client_tty pane_id created_at

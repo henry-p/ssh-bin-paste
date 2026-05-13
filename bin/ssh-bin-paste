@@ -328,7 +328,6 @@ cmd_paste() {
   parse_remote_opts "$@"
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
   local output_path capture local_path mime ext cache remote_path target now uuid
-  REQUEST_AFTER="${REQUEST_AFTER:-$(( $(date +%s) - 5 ))}"
   target="$(wait_for_target_request "$REQUEST_AFTER")" || {
     printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
     exit 1

@@ -1,5 +1,6 @@
 #!/usr/bin/env swift
 import AppKit
+import ApplicationServices
 import Carbon
 import Foundation
 
@@ -39,7 +40,15 @@ func clipboardHasSupportedPayload() -> Bool {
     if NSImage(pasteboard: pasteboard) != nil {
         return true
     }
+    if pasteboard.string(forType: .fileURL) != nil {
+        return true
+    }
     return false
+}
+
+func log(_ message: String) {
+    print(message)
+    fflush(stdout)
 }
 
 func frontmostAppIsAllowed() -> Bool {
@@ -50,7 +59,7 @@ func frontmostAppIsAllowed() -> Bool {
 }
 
 func sendRemotePasteSignal() {
-    let source = CGEventSource(stateID: .combinedSessionState)
+    let source = CGEventSource(stateID: .hidSystemState)
     let keyCode = CGKeyCode(kVK_ANSI_RightBracket)
     let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
     let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
@@ -63,16 +72,17 @@ func sendRemotePasteSignal() {
 }
 
 func runPasteCommand() {
-    let requestAfter = String(Int(Date().timeIntervalSince1970) - 1)
     sendRemotePasteSignal()
     DispatchQueue.global(qos: .userInitiated).async {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if let sshCommand = config.sshCommand {
-            process.arguments = [config.command, "paste", "--request-after", requestAfter, "--ssh", sshCommand]
+            process.arguments = [config.command, "paste", "--ssh", sshCommand]
         } else {
-            process.arguments = [config.command, "paste", "--request-after", requestAfter, "--host", config.host]
+            process.arguments = [config.command, "paste", "--host", config.host]
         }
+        process.standardOutput = FileHandle.standardOutput
+        process.standardError = FileHandle.standardError
         try? process.run()
     }
 }
@@ -104,8 +114,13 @@ let hotKeyCallback: EventHandlerUPP = { _, event, _ in
         nil,
         &hotKeyID
     )
-    if status == noErr && hotKeyID.id == 1 && clipboardHasSupportedPayload() {
-        runPasteCommand()
+    if status == noErr && hotKeyID.id == 1 {
+        if clipboardHasSupportedPayload() {
+            log("Cmd+Shift+V detected; asking remote tmux for the focused pane.")
+            runPasteCommand()
+        } else {
+            log("Cmd+Shift+V detected, but the clipboard has no supported payload.")
+        }
     }
     return noErr
 }
@@ -187,6 +202,10 @@ let sshCommand = valueAfter("--ssh")
 let apps = Set((valueAfter("--allowlisted-apps") ?? "").split(separator: ",").map(String.init))
 config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
 
+if !AXIsProcessTrusted() {
+    print("warning: Accessibility permission is not granted. macOS may block sending Ctrl+] into the focused SSH terminal.")
+    print("grant Accessibility permission to your terminal app, then restart ssh-bin-paste up.")
+}
 installDedicatedShortcut()
 if config.hijackPaste {
     installPasteHijackTap()
