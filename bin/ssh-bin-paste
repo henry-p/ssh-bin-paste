@@ -176,6 +176,12 @@ run_remote_helper() {
   run_ssh "$remote_cmd"
 }
 
+run_remote_helper_quiet() {
+  local remote_cmd
+  remote_cmd="$(remote_helper_command "$@")"
+  run_ssh "$remote_cmd" 2>/dev/null
+}
+
 run_remote_helper_stdin() {
   local input_file="$1" remote_cmd
   shift
@@ -328,7 +334,7 @@ done"
 }
 
 remote_helper_supports_current_protocol() {
-  run_remote_helper request-arm "__ssh-bin-paste-protocol-check__" >/dev/null 2>&1
+  run_remote_helper_quiet request-arm "__ssh-bin-paste-protocol-check__" >/dev/null
 }
 
 ensure_configured() {
@@ -371,7 +377,7 @@ wait_for_target_request() {
   local deadline=$((SECONDS + 5))
   local request request_id pane_id
   while [ "$SECONDS" -le "$deadline" ]; do
-    request="$(run_remote_helper request-next "$token" "$after" 2>/dev/null || true)"
+    request="$(run_remote_helper_quiet request-next "$token" "$after" || true)"
     if [ -n "$request" ]; then
       request_id="$(record_field "$request" request_id)"
       pane_id="$(record_field "$request" pane_id)"
@@ -393,7 +399,10 @@ cmd_arm() {
     printf 'missing --request-token\n' >&2
     exit 2
   fi
-  run_remote_helper request-arm "$REQUEST_TOKEN" >/dev/null
+  run_remote_helper_quiet request-arm "$REQUEST_TOKEN" >/dev/null || {
+    printf 'Remote helper is out of date or unavailable. Restart ssh-bin-paste up so it can update the remote helper.\n' >&2
+    exit 1
+  }
 }
 
 cmd_paste() {
