@@ -46,12 +46,12 @@ let pngType = NSPasteboard.PasteboardType("public.png")
 let tiffType = NSPasteboard.PasteboardType("public.tiff")
 
 let data: Data?
-if let png = pasteboard.data(forType: pngType) {
+if let file = pasteboard.string(forType: .fileURL), let image = imageFromFileURL(file) {
+    data = pngData(from: image)
+} else if let png = pasteboard.data(forType: pngType) {
     data = png
 } else if let tiff = pasteboard.data(forType: tiffType), let rep = NSBitmapImageRep(data: tiff) {
     data = rep.representation(using: .png, properties: [:])
-} else if let file = pasteboard.string(forType: .fileURL), let image = imageFromFileURL(file) {
-    data = pngData(from: image)
 } else if let image = NSImage(pasteboard: pasteboard) {
     data = pngData(from: image)
 } else {
