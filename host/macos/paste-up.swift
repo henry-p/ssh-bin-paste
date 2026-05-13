@@ -89,16 +89,44 @@ func sendRemotePasteSignal() {
     usleep(150_000)
 }
 
+func remoteArguments(commandName: String, token: String) -> [String] {
+    if let sshCommand = config.sshCommand {
+        return [config.command, commandName, "--request-token", token, "--ssh", sshCommand]
+    }
+    return [config.command, commandName, "--request-token", token, "--host", config.host]
+}
+
+func runCommandSync(_ arguments: [String]) throws -> Int32 {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = arguments
+    process.standardOutput = FileHandle.standardOutput
+    process.standardError = FileHandle.standardError
+    try process.run()
+    process.waitUntilExit()
+    return process.terminationStatus
+}
+
 func runPasteCommand() {
-    sendRemotePasteSignal()
     DispatchQueue.global(qos: .userInitiated).async {
+        let token = UUID().uuidString.lowercased()
+        do {
+            let armStatus = try runCommandSync(remoteArguments(commandName: "arm", token: token))
+            guard armStatus == 0 else {
+                finishPasteOperation()
+                return
+            }
+        } catch {
+            finishPasteOperation()
+            fputs("failed to arm remote paste request: \(error.localizedDescription)\n", stderr)
+            return
+        }
+
+        sendRemotePasteSignal()
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        if let sshCommand = config.sshCommand {
-            process.arguments = [config.command, "paste", "--ssh", sshCommand]
-        } else {
-            process.arguments = [config.command, "paste", "--host", config.host]
-        }
+        process.arguments = remoteArguments(commandName: "paste", token: token)
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError
         process.terminationHandler = { _ in

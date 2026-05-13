@@ -23,6 +23,7 @@ CLEANUP_MAX_AGE_SECONDS="86400"
 CLEANUP_INTERVAL_SECONDS="300"
 HIJACK_PASTE="0"
 REQUEST_AFTER=""
+REQUEST_TOKEN=""
 
 usage() {
   cat <<'USAGE'
@@ -116,6 +117,7 @@ parse_remote_opts() {
       --host) HOST="$2"; shift 2 ;;
       --ssh) SSH_COMMAND="$2"; shift 2 ;;
       --request-after) REQUEST_AFTER="$2"; shift 2 ;;
+      --request-token) REQUEST_TOKEN="$2"; shift 2 ;;
       --hijack-paste) HIJACK_PASTE="1"; shift ;;
       --*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
       *) EXTRA_ARG="$1"; shift ;;
@@ -338,10 +340,11 @@ record_field() {
 
 wait_for_target_request() {
   local after="${1:-0}"
+  local token="${2:-}"
   local deadline=$((SECONDS + 5))
   local request request_id pane_id
   while [ "$SECONDS" -le "$deadline" ]; do
-    request="$(run_remote_helper request-next "$after" 2>/dev/null || true)"
+    request="$(run_remote_helper request-next "$token" "$after" 2>/dev/null || true)"
     if [ -n "$request" ]; then
       request_id="$(record_field "$request" request_id)"
       pane_id="$(record_field "$request" pane_id)"
@@ -356,12 +359,22 @@ wait_for_target_request() {
   return 1
 }
 
+cmd_arm() {
+  load_config
+  parse_remote_opts "$@"
+  if [ -z "$REQUEST_TOKEN" ]; then
+    printf 'missing --request-token\n' >&2
+    exit 2
+  fi
+  run_remote_helper request-arm "$REQUEST_TOKEN" >/dev/null
+}
+
 cmd_paste() {
   load_config
   parse_remote_opts "$@"
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
   local output_path capture local_path mime ext cache remote_path target now uuid
-  target="$(wait_for_target_request "$REQUEST_AFTER")" || {
+  target="$(wait_for_target_request "$REQUEST_AFTER" "$REQUEST_TOKEN")" || {
     printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
     exit 1
   }
@@ -403,6 +416,7 @@ main() {
   [ $# -gt 0 ] && shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
+    arm) cmd_arm "$@" ;;
     paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;

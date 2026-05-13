@@ -7,6 +7,7 @@ STATE_DIR="${SSH_BIN_PASTE_STATE_DIR:-$HOME/.cache/ssh-bin-paste}"
 CLEANUP_PID_FILE="$STATE_DIR/cleanup-worker.pid"
 CLEANUP_LOG_FILE="$STATE_DIR/cleanup-worker.log"
 REQUEST_DIR="$STATE_DIR/paste-requests"
+ARM_FILE="$STATE_DIR/paste-arm"
 
 usage() {
   cat >&2 <<'EOF'
@@ -15,8 +16,9 @@ usage: ssh-bin-paste-remote <command> [args]
 commands:
   version
   install-tmux-binding
+  request-arm <token>
   request <client-tty> <pane-id> [tmux-session]
-  request-next [created-after]
+  request-next [token] [created-after]
   request-consume <request-id>
   ensure-cache [cache-dir]
   inject <target-pane>
@@ -59,6 +61,7 @@ write_request_record() {
   local client_tty="$2"
   local pane_id="$3"
   local tmux_session="$4"
+  local token="$5"
   local created_at
   created_at="$(date +%s)"
   mkdir -p "$REQUEST_DIR"
@@ -75,16 +78,38 @@ write_request_record() {
     printf 'pane_id='
     quote_sh "$pane_id"
     printf '\n'
+    printf 'token='
+    quote_sh "$token"
+    printf '\n'
     printf 'created_at='
     quote_sh "$created_at"
     printf '\n'
   } > "$REQUEST_DIR/$request_id"
 }
 
+request_arm() {
+  local token="${1:-}"
+  if [ -z "$token" ]; then
+    printf 'missing token\n' >&2
+    return 2
+  fi
+  mkdir -p "$STATE_DIR"
+  {
+    printf 'token='
+    quote_sh "$token"
+    printf '\n'
+    printf 'created_at='
+    quote_sh "$(date +%s)"
+    printf '\n'
+  } > "$ARM_FILE"
+}
+
 request_paste() {
   local client_tty="${1:-}"
   local pane_id="${2:-}"
   local tmux_session="${3:-}"
+  local token=""
+  local armed_created_at=0
   if [ -z "$pane_id" ]; then
     printf 'missing pane id\n' >&2
     return 2
@@ -92,20 +117,31 @@ request_paste() {
   if [ -z "$tmux_session" ] && command -v tmux >/dev/null 2>&1; then
     tmux_session="$(tmux display-message -p '#S' 2>/dev/null || true)"
   fi
+  if [ -f "$ARM_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$ARM_FILE"
+    armed_created_at="${created_at:-0}"
+    case "$armed_created_at" in ''|*[!0-9]*) armed_created_at=0 ;; esac
+    if [ $(( $(date +%s) - armed_created_at )) -gt 10 ]; then
+      token=""
+    fi
+    rm -f "$ARM_FILE"
+  fi
   local request_id
   request_id="$(new_id)"
-  write_request_record "$request_id" "$client_tty" "$pane_id" "$tmux_session"
+  write_request_record "$request_id" "$client_tty" "$pane_id" "$tmux_session" "$token"
 }
 
 request_next() {
-  local after="${1:-}"
+  local want_token="${1:-}"
+  local after="${2:-}"
   if [ -z "$after" ]; then
     after="$(($(date +%s) - 15))"
   fi
   case "$after" in ''|*[!0-9]*) after=0 ;; esac
   local newest_file=""
   local newest_created=0
-  local file request_id tmux_session client_tty pane_id created_at
+  local file request_id tmux_session client_tty pane_id token created_at
   mkdir -p "$REQUEST_DIR"
   for file in "$REQUEST_DIR"/*; do
     [ -f "$file" ] || continue
@@ -113,10 +149,14 @@ request_next() {
     tmux_session=""
     client_tty=""
     pane_id=""
+    token=""
     created_at=0
     # shellcheck disable=SC1090
     . "$file"
     case "$created_at" in ''|*[!0-9]*) created_at=0 ;; esac
+    if [ -n "$want_token" ] && [ "$token" != "$want_token" ]; then
+      continue
+    fi
     if [ "$created_at" -ge "$after" ] && [ "$created_at" -ge "$newest_created" ]; then
       newest_created="$created_at"
       newest_file="$file"
@@ -260,6 +300,10 @@ case "${1:-}" in
     ;;
   install-tmux-binding)
     install_tmux_binding
+    ;;
+  request-arm)
+    shift
+    request_arm "${1:-}"
     ;;
   request)
     shift
