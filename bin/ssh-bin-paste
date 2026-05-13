@@ -83,11 +83,6 @@ prompt() {
   done
 }
 
-validate_host_alias() {
-  case "$1" in ssh\ *) return 1 ;; esac
-  [ "$(printf '%s' "$1" | wc -w | tr -d ' ')" = "1" ]
-}
-
 validate_ssh_command() {
   case "$1" in ssh\ *|*/ssh\ *) return 0 ;; *) return 1 ;; esac
 }
@@ -96,28 +91,12 @@ run_config_wizard() {
   load_config
   mkdir -p "$CONFIG_DIR"
   printf 'ssh-bin-paste config\n\n' >/dev/tty
-  printf 'Remote target:\n  1. SSH config host alias (example: example-remote)\n  2. Full SSH command (example: ssh -i ~/.ssh/example_ed25519 user@203.0.113.10)\n' >/dev/tty
-  local default_mode="1" mode
-  [ -n "$SSH_COMMAND" ] && default_mode="2"
+  local default_ssh="${SSH_COMMAND:-ssh user@example-remote}"
   while true; do
-    mode="$(prompt 'Choose' "$default_mode")"
-    case "$mode" in 1|2) break ;; *) printf 'Choose 1 or 2.\n' >/dev/tty ;; esac
+    SSH_COMMAND="$(prompt 'SSH command' "$default_ssh")"
+    if validate_ssh_command "$SSH_COMMAND"; then break; fi
+    printf 'SSH command must start with ssh.\n' >/dev/tty
   done
-  if [ "$mode" = "1" ]; then
-    while true; do
-      HOST="$(prompt 'SSH host alias' "$HOST")"
-      if validate_host_alias "$HOST"; then break; fi
-      printf 'Enter a single SSH host alias, not a full ssh command.\n' >/dev/tty
-    done
-    SSH_COMMAND=""
-  else
-    local default_ssh="${SSH_COMMAND:-ssh -i ~/.ssh/example_ed25519 user@203.0.113.10}"
-    while true; do
-      SSH_COMMAND="$(prompt 'Full SSH command' "$default_ssh")"
-      if validate_ssh_command "$SSH_COMMAND"; then break; fi
-      printf 'SSH command must start with ssh.\n' >/dev/tty
-    done
-  fi
 
   AGENT_CODEX_COMMAND="codex"
   AGENT_CLAUDE_COMMAND="claude"
