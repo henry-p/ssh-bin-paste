@@ -29,6 +29,7 @@ tmux new -s agent
 codex
 ```
 Press `CMD+SHIFT+V` (or your configured shortcut) while your SSH terminal is focused → the file will be pasted as if being on your host!
+You can also drag a local file into the SSH terminal; if your terminal inserts the host file path, ssh-bin-paste uploads it and rewrites the input to the remote path.
 
 ## Commands
 | Command | Where | Purpose |

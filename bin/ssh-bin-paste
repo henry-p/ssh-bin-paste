@@ -235,11 +235,11 @@ check_line() {
 }
 
 progress_bar() {
-  local percent="$1" label="$2" width=24 filled empty
+  local percent="$1" label="$2" subject="${3:-clipboard payload}" width=24 filled empty
   filled=$((percent * width / 100))
   empty=$((width - filled))
   if [ -t 1 ]; then
-    printf '\r\033[2Kuploading clipboard payload ['
+    printf '\r\033[2Kuploading %s [' "$subject"
     printf '%*s' "$filled" '' | tr ' ' '#'
     printf '%*s' "$empty" '' | tr ' ' '-'
     printf '] %3d%% %s' "$percent" "$label"
@@ -247,7 +247,7 @@ progress_bar() {
       printf '\n'
     fi
   else
-    printf 'uploading clipboard payload %3d%% %s\n' "$percent" "$label"
+    printf 'uploading %s %3d%% %s\n' "$subject" "$percent" "$label"
   fi
 }
 
@@ -383,7 +383,7 @@ done"
 }
 
 remote_helper_supports_current_protocol() {
-  run_remote_helper_quiet request-arm "__ssh-bin-paste-protocol-check__" >/dev/null
+  [ "$(run_remote_helper_quiet protocol-version 2>/dev/null || true)" = "2" ]
 }
 
 ensure_configured() {
@@ -407,6 +407,24 @@ extension_for_mime() {
     image/webp) printf 'webp' ;;
     image/gif) printf 'gif' ;;
     *) printf 'bin' ;;
+  esac
+}
+
+dropped_path_extension() {
+  local path="$1" base ext
+  base="${path##*/}"
+  ext="${base##*.}"
+  if [ "$ext" = "$base" ] || [ -z "$ext" ]; then
+    printf 'bin\n'
+    return 0
+  fi
+  case "$ext" in
+    *[!A-Za-z0-9]*)
+      printf 'bin\n'
+      ;;
+    *)
+      printf '%s\n' "$ext"
+      ;;
   esac
 }
 
@@ -483,6 +501,84 @@ cmd_paste() {
   printf 'pasted %s into %s\n' "$remote_path" "$target"
 }
 
+drop_seen_recently() {
+  local key_input="$1" key file now last
+  mkdir -p "$STATE_DIR/drop-seen"
+  key="$(printf '%s' "$key_input" | cksum | awk '{print $1}')"
+  file="$STATE_DIR/drop-seen/$key"
+  now="$(date +%s)"
+  last="$(cat "$file" 2>/dev/null || printf 0)"
+  case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  if [ $((now - last)) -lt 5 ]; then
+    return 0
+  fi
+  printf '%s\n' "$now" > "$file"
+  return 1
+}
+
+resolve_dropped_local_path() {
+  local typed_path="$1" local_path="$2" len i candidate
+  if [ -f "$local_path" ]; then
+    printf '%s\t%s\n' "$typed_path" "$local_path"
+    return 0
+  fi
+
+  len="${#local_path}"
+  i="$len"
+  while [ "$i" -gt 0 ]; do
+    candidate="${local_path:0:$i}"
+    candidate="${candidate%"${candidate##*[![:space:]]}"}"
+    candidate="${candidate%\"}"
+    candidate="${candidate%\'}"
+    candidate="${candidate%,}"
+    candidate="${candidate%;}"
+    candidate="${candidate%)}"
+    if [ -f "$candidate" ]; then
+      printf '%s\t%s\n' "${typed_path:0:${#candidate}}" "$candidate"
+      return 0
+    fi
+    i=$((i - 1))
+  done
+  return 1
+}
+
+handle_dropped_local_path() {
+  local pane_id="$1" typed_path="$2" local_path="$3" resolved cache ext now uuid remote_path
+  [ -n "$pane_id" ] && [ -n "$typed_path" ] && [ -n "$local_path" ] || return 0
+  case "$local_path" in
+    /Users/*|/Volumes/*|/private/var/*) ;;
+    *) return 0 ;;
+  esac
+  resolved="$(resolve_dropped_local_path "$typed_path" "$local_path")" || return 0
+  typed_path="$(printf '%s\n' "$resolved" | awk -F '\t' 'NR == 1 { print $1 }')"
+  local_path="$(printf '%s\n' "$resolved" | awk -F '\t' 'NR == 1 { print $2 }')"
+  drop_seen_recently "$pane_id|$typed_path" && return 0
+
+  progress_bar 10 'dropped path detected' 'dropped file'
+  cache="$(run_remote_helper ensure-cache "$REMOTE_CACHE_DIR")"
+  progress_bar 30 'remote cache ready' 'dropped file'
+  ext="$(dropped_path_extension "$local_path")"
+  now="$(date +%s)"
+  uuid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  remote_path="${cache%/}/ssh-bin-paste-$now-$uuid.$ext"
+  progress_bar 55 'uploading' 'dropped file'
+  run_ssh_stdin "cat > $(shell_quote "$remote_path") && chmod 0600 $(shell_quote "$remote_path")" "$local_path"
+  progress_bar 80 'rewriting remote input' 'dropped file'
+  run_remote_helper replace-local-path "$pane_id" "$typed_path" "$remote_path" >/dev/null
+  progress_bar 100 'rewritten' 'dropped file'
+  printf 'rewrote dropped path into %s\n' "$pane_id"
+}
+
+drop_watch_loop() {
+  local pane_id typed_path local_path
+  while true; do
+    run_remote_helper_quiet watch-local-paths 0.5 | while IFS="$(printf '\t')" read -r pane_id typed_path local_path; do
+      handle_dropped_local_path "$pane_id" "$typed_path" "$local_path" || true
+    done
+    sleep 1
+  done
+}
+
 cmd_up() {
   ensure_configured
   parse_remote_opts "$@"
@@ -495,9 +591,13 @@ cmd_up() {
 
   printf 'ssh-bin-paste up running. %s sends your clipboard payload to the focused tmux pane on the remote server.\n' "$PASTE_SHORTCUT"
 
-  local child_pid=""
+  local child_pid="" drop_watch_pid=""
   cleanup_up() {
     trap - INT TERM EXIT
+    if [ -n "$drop_watch_pid" ]; then
+      force_terminate_pid_tree "$drop_watch_pid"
+      wait "$drop_watch_pid" 2>/dev/null || true
+    fi
     if [ -n "$child_pid" ]; then
       force_terminate_pid_tree "$child_pid"
       wait "$child_pid" 2>/dev/null || true
@@ -507,6 +607,9 @@ cmd_up() {
   trap 'cleanup_up; exit 130' INT
   trap 'cleanup_up; exit 143' TERM
   trap 'cleanup_up' EXIT
+
+  drop_watch_loop &
+  drop_watch_pid="$!"
 
   swift "${args[@]}" &
   child_pid="$!"

@@ -15,6 +15,7 @@ usage: ssh-bin-paste-remote <command> [args]
 
 commands:
   version
+  protocol-version
   install-tmux-binding
   request-arm <token>
   request <client-tty> <pane-id> [tmux-session]
@@ -22,6 +23,9 @@ commands:
   request-consume <request-id>
   ensure-cache [cache-dir]
   inject <target-pane>
+  scan-local-paths
+  watch-local-paths [interval-seconds]
+  replace-local-path <target-pane> <typed-path> <remote-path>
   cleanup-loop [cache-dir] [max-age-seconds] [interval-seconds]
   cleanup-start [cache-dir] [max-age-seconds] [interval-seconds]
 EOF
@@ -249,6 +253,128 @@ inject() {
   tmux paste-buffer -p -d -b ssh-bin-paste -t "$target"
 }
 
+unescape_typed_path() {
+  local raw="$1" out="" i=0 len char
+  len="${#raw}"
+  while [ "$i" -lt "$len" ]; do
+    char="${raw:$i:1}"
+    if [ "$char" = "\\" ] && [ $((i + 1)) -lt "$len" ]; then
+      i=$((i + 1))
+      out="${out}${raw:$i:1}"
+    else
+      out="${out}${char}"
+    fi
+    i=$((i + 1))
+  done
+  printf '%s\n' "$out"
+}
+
+extract_local_paths_from_line() {
+  local pane_id="$1" line="$2" len i start raw char local_path tail tail_local
+  len="${#line}"
+  i=0
+  while [ "$i" -lt "$len" ]; do
+    start=-1
+    case "${line:$i}" in
+      /Users/*|/Volumes/*|/private/var/*|file:///Users/*|file:///Volumes/*|file:///private/var/*|file://localhost/Users/*|file://localhost/Volumes/*|file://localhost/private/var/*) start="$i" ;;
+    esac
+    if [ "$start" -lt 0 ]; then
+      i=$((i + 1))
+      continue
+    fi
+
+    raw=""
+    while [ "$i" -lt "$len" ]; do
+      char="${line:$i:1}"
+      if [ "$char" = " " ] || [ "$char" = "$(printf '\t')" ] || [ "$char" = '"' ] || [ "$char" = "'" ] || [ "$char" = "<" ] || [ "$char" = ">" ] || [ "$char" = "|" ] || [ "$char" = "[" ] || [ "$char" = "]" ] || [ "$char" = "{" ] || [ "$char" = "}" ]; then
+        break
+      fi
+      case "$char" in
+        "\\")
+          raw="${raw}${char}"
+          i=$((i + 1))
+          if [ "$i" -lt "$len" ]; then
+            raw="${raw}${line:$i:1}"
+          fi
+          ;;
+        *)
+          raw="${raw}${char}"
+          ;;
+      esac
+      i=$((i + 1))
+    done
+
+    if [ -n "$raw" ]; then
+      local_path="$(unescape_typed_path "$raw")"
+      case "$local_path" in
+        file://localhost/*) local_path="${local_path#file://localhost}" ;;
+        file://*) local_path="${local_path#file://}" ;;
+      esac
+      printf '%s\t%s\t%s\n' "$pane_id" "$raw" "$local_path"
+    fi
+
+    tail="${line:$start}"
+    tail="${tail%"${tail##*[![:space:]]}"}"
+    if [ -n "$tail" ] && [ "$tail" != "$raw" ]; then
+      tail_local="$(unescape_typed_path "$tail")"
+      case "$tail_local" in
+        file://localhost/*) tail_local="${tail_local#file://localhost}" ;;
+        file://*) tail_local="${tail_local#file://}" ;;
+      esac
+      printf '%s\t%s\t%s\n' "$pane_id" "$tail" "$tail_local"
+    fi
+  done
+}
+
+scan_local_paths() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  local pane_id pane_command cursor_y start_y content line
+  tmux list-panes -a -F '#{pane_id}	#{pane_current_command}' 2>/dev/null | while IFS="$(printf '\t')" read -r pane_id pane_command; do
+    [ -n "$pane_id" ] || continue
+    case "$pane_command" in
+      codex|claude|node|bun|deno|python|python3) ;;
+      *) continue ;;
+    esac
+    cursor_y="$(tmux display-message -p -t "$pane_id" '#{cursor_y}' 2>/dev/null || printf 0)"
+    case "$cursor_y" in ''|*[!0-9]*) cursor_y=0 ;; esac
+    start_y="$cursor_y"
+    if [ "$start_y" -gt 0 ]; then
+      start_y=$((start_y - 1))
+    fi
+    content="$(tmux capture-pane -p -J -t "$pane_id" -S "$start_y" -E "$cursor_y" 2>/dev/null || true)"
+    while IFS= read -r line; do
+      extract_local_paths_from_line "$pane_id" "$line"
+    done <<EOF2
+$content
+EOF2
+  done
+}
+
+watch_local_paths() {
+  local interval="${1:-0.5}"
+  while true; do
+    scan_local_paths
+    sleep "$interval"
+  done
+}
+
+replace_local_path() {
+  local target="${1:-}" typed_path="${2:-}" remote_path="${3:-}" count i
+  if [ -z "$target" ] || [ -z "$typed_path" ] || [ -z "$remote_path" ]; then
+    printf 'usage: replace-local-path <target-pane> <typed-path> <remote-path>\n' >&2
+    return 2
+  fi
+  validate_pane "$target"
+
+  count="${#typed_path}"
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    tmux send-keys -t "$target" BSpace
+    i=$((i + 1))
+  done
+  printf '%s' "$remote_path" | inject "$target"
+}
+
 cleanup() {
   local dir max_age
   dir="$(expand_path "${1:-$DEFAULT_CACHE_DIR}")"
@@ -298,6 +424,9 @@ case "${1:-}" in
   version)
     printf '%s\n' "$VERSION"
     ;;
+  protocol-version)
+    printf '2\n'
+    ;;
   install-tmux-binding)
     install_tmux_binding
     ;;
@@ -324,6 +453,17 @@ case "${1:-}" in
   inject)
     shift
     inject "${1:-}"
+    ;;
+  scan-local-paths)
+    scan_local_paths
+    ;;
+  watch-local-paths)
+    shift
+    watch_local_paths "${1:-}"
+    ;;
+  replace-local-path)
+    shift
+    replace_local_path "${1:-}" "${2:-}" "${3:-}"
     ;;
   cleanup-loop)
     shift
