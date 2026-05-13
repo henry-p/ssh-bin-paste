@@ -416,12 +416,26 @@ cmd_up() {
   parse_remote_opts "$@"
   stop_existing_host_processes
   acquire_up_lock || exit 1
-  trap 'release_up_lock' EXIT INT TERM
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
   if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
-  swift "${args[@]}"
+
+  local child_pid=""
+  cleanup_up() {
+    if [ -n "$child_pid" ]; then
+      kill "$child_pid" 2>/dev/null || true
+      wait "$child_pid" 2>/dev/null || true
+    fi
+    release_up_lock
+  }
+  trap 'cleanup_up; exit 130' INT
+  trap 'cleanup_up; exit 143' TERM
+  trap 'cleanup_up' EXIT
+
+  swift "${args[@]}" &
+  child_pid="$!"
+  wait "$child_pid"
 }
 
 cmd_config() {
