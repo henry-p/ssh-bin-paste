@@ -110,7 +110,7 @@ func replaceStatusLine(_ text: String) {
 func renderCurrent(_ flags: CGEventFlags) {
     let names = modifierNames(flags)
     let current = names.isEmpty
-        ? "(Recording... Press [Enter] to keep [\(defaultShortcut)], [Esc] to cancel.)"
+        ? "(Press [Enter] to keep [\(defaultShortcut)])"
         : names.joined(separator: "+")
     replaceStatusLine("New shortcut: \(current)")
 }
@@ -160,7 +160,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
     return nil
 }
 
-writeStderr("Recording paste command.\n\n")
+writeStderr("Recording paste command...\n")
 configureTerminalForRecording()
 renderCurrent([])
 

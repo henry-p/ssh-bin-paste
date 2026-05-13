@@ -114,7 +114,7 @@ prompt_paste_shortcut() {
       fi
       printf 'Paste command must include CMD, for example CMD+SHIFT+V.\n' >/dev/tty
     else
-      printf 'Shortcut recording canceled.\n' >/dev/tty
+      exit 130
     fi
   done
 }
@@ -129,6 +129,7 @@ run_config_wizard() {
     if validate_ssh_command "$SSH_COMMAND"; then break; fi
     printf 'SSH command must start with ssh.\n' >/dev/tty
   done
+  printf '\n' >/dev/tty
   PASTE_SHORTCUT="$(prompt_paste_shortcut "${PASTE_SHORTCUT:-Cmd+Shift+V}")"
 
   AGENT_CODEX_COMMAND="codex"
