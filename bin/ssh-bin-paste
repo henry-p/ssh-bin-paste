@@ -94,7 +94,7 @@ validate_ssh_command() {
 
 validate_shortcut() {
   case "$1" in
-    *+?*) return 0 ;;
+    *CMD+?*|*CMD+*+?*|*Cmd+?*|*Cmd+*+?*|*cmd+?*|*cmd+*+?*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -113,7 +113,7 @@ prompt_paste_shortcut() {
         printf '%s\n' "$recorded"
         return 0
       fi
-      printf 'Paste command must look like Cmd+Shift+V.\n' >/dev/tty
+      printf 'Paste command must include CMD, for example CMD+SHIFT+V.\n' >/dev/tty
     else
       printf 'Shortcut recording canceled.\n' >/dev/tty
     fi

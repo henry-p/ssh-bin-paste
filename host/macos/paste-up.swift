@@ -236,7 +236,7 @@ func parseShortcut(_ value: String) -> Shortcut? {
             return nil
         }
     }
-    guard carbonModifiers != 0 else {
+    guard carbonModifiers & UInt32(cmdKey) != 0 else {
         return nil
     }
 

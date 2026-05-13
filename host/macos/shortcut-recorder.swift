@@ -117,7 +117,7 @@ func finish(_ shortcut: String, status: Int32 = 0) {
 
 func shortcutString(flags: CGEventFlags, keyCode: CGKeyCode) -> String? {
     var names = modifierNames(flags)
-    guard !names.isEmpty, let key = keyName(for: keyCode) else {
+    guard flags.contains(.maskCommand), let key = keyName(for: keyCode) else {
         return nil
     }
     names.append(key)
@@ -146,7 +146,7 @@ let callback: CGEventTapCallBack = { _, type, event, _ in
         return nil
     }
     guard let shortcut = shortcutString(flags: event.flags, keyCode: keyCode) else {
-        writeStderr("\rUse at least one modifier plus a normal key.                    ")
+        writeStderr("\rUse CMD plus a normal key.                    ")
         return nil
     }
     writeStderr("\nRecorded \(shortcut).\n")
