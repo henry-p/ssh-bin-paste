@@ -18,22 +18,26 @@ curl -fsSL \
   | bash
 ```
 
-### 2. On the host, start the paste capture process
+### 2. On the host, start paste capture
 
 ```sh
 ssh-bin-paste up
 ```
 
-On first run, this opens the config wizard and installs the remote helper; keep it running on the host.
+On first run, enter your SSH command, for example `ssh user@example-remote`.
+This installs the remote helper, starts the paste shortcut listener, and waits for remote pairings; keep it running on the host.
 
-### 3. On the remote, attach to the agent session
+## Use
 
 ```sh
-ssh example-remote
+# In your normal SSH terminal, connect with the same SSH command.
+ssh user@example-remote
+
+# On the remote, attach to the tmux session running Claude or Codex.
 ssh-bin-paste attach
 ```
 
-Done! Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut.
+Copy a supported file or image locally, focus your SSH terminal, then press the paste shortcut.
 The payload is uploaded over SSH and the remote path is pasted into the currently attached Claude or Codex session.
 
 ## Paste shortcut
@@ -44,7 +48,7 @@ Press `Cmd+Shift+V` while your SSH terminal is focused; the host reads the clipb
 
 | Command | Where | Purpose |
 | --- | --- | --- |
-| `ssh-bin-paste config` | Host | Configure SSH and install the remote helper. |
+| `ssh-bin-paste config` | Host | Set the SSH command and install the remote helper. |
 | `ssh-bin-paste up` | Host | Configure on first run, then run the paste shortcut and wait for remote `attach` pairings. |
 | `ssh-bin-paste attach` | Remote | Choose and attach to the remote `tmux` session running Claude or Codex. |
 
@@ -52,7 +56,7 @@ Press `Cmd+Shift+V` while your SSH terminal is focused; the host reads the clipb
 
 **Host**: macOS with Swift available (e.g. via Apple Command Line Tools)\
 &nbsp;&nbsp;&nbsp;↓ *SSH*\
-**Remote**: `tmux` , `codex` || `claude`
+**Remote**: `tmux` and Claude Code or Codex
 
 ## Coming soon
 
