@@ -12,6 +12,11 @@ REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
 PASTE_UP="$ASSET_DIR/paste-up.swift"
 SHORTCUT_RECORDER="$ASSET_DIR/shortcut-recorder.swift"
+LAUNCH_AGENT_LABEL="com.ssh-bin-paste.up"
+LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
+LAUNCH_AGENT_PLIST="$LAUNCH_AGENT_DIR/$LAUNCH_AGENT_LABEL.plist"
+LAUNCH_AGENT_OUT_LOG="$CACHE_DIR/launchagent.out.log"
+LAUNCH_AGENT_ERR_LOG="$CACHE_DIR/launchagent.err.log"
 
 HOST="example-remote"
 SSH_COMMAND=""
@@ -26,6 +31,9 @@ HIJACK_PASTE="0"
 PASTE_SHORTCUT="CMD+SHIFT+V"
 REQUEST_AFTER=""
 REQUEST_TOKEN=""
+SERVICE_MODE="0"
+CONFIG_INSTALL_SERVICE="0"
+CONFIG_CREATED="0"
 
 usage() {
   cat <<'USAGE'
@@ -34,6 +42,7 @@ usage: ssh-bin-paste <command> [args]
 commands:
   config             configure SSH and install the remote helper
   up                 run the paste shortcut listener
+  service            manage the macOS login service
   version            print version
 USAGE
 }
@@ -102,6 +111,36 @@ validate_shortcut() {
   esac
 }
 
+prompt_yes_no() {
+  local label="$1" default="$2" answer normalized choices display_answer
+  while true; do
+    case "$default" in
+      no) choices=$'\033[4mNo\033[24m/Yes' ;;
+      yes) choices=$'No/\033[4mYes\033[24m' ;;
+      *) choices="$default" ;;
+    esac
+    printf '%s [%s]: ' "$label" "$choices" >/dev/tty
+    IFS= read -r answer </dev/tty
+    if [ -z "$answer" ]; then
+      answer="$default"
+    fi
+    normalized="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+      y|yes)
+        display_answer="Yes"
+        printf '\033[1A\r\033[2K%s [%s]: %s\n' "$label" "$choices" "$display_answer" >/dev/tty
+        return 0
+        ;;
+      n|no)
+        display_answer="No"
+        printf '\033[1A\r\033[2K%s [%s]: %s\n' "$label" "$choices" "$display_answer" >/dev/tty
+        return 1
+        ;;
+      *) printf 'Please answer yes or no.\n' >/dev/tty ;;
+    esac
+  done
+}
+
 prompt_paste_shortcut() {
   local default="$1" recorded
   while true; do
@@ -134,6 +173,12 @@ run_config_wizard() {
   done
   printf '\n' >/dev/tty
   PASTE_SHORTCUT="$(prompt_paste_shortcut "${PASTE_SHORTCUT:-Cmd+Shift+V}")"
+  printf '\n' >/dev/tty
+  if prompt_yes_no 'Install login service' 'no'; then
+    CONFIG_INSTALL_SERVICE="1"
+  else
+    CONFIG_INSTALL_SERVICE="0"
+  fi
 
   AGENT_CODEX_COMMAND="codex"
   AGENT_CLAUDE_COMMAND="claude"
@@ -154,6 +199,7 @@ parse_remote_opts() {
       --request-after) REQUEST_AFTER="$2"; shift 2 ;;
       --request-token) REQUEST_TOKEN="$2"; shift 2 ;;
       --hijack-paste) HIJACK_PASTE="1"; shift ;;
+      --service) SERVICE_MODE="1"; shift ;;
       --*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
       *) EXTRA_ARG="$1"; shift ;;
     esac
@@ -382,12 +428,129 @@ done"
   fi
 }
 
+xml_escape() {
+  printf '%s' "$1" | sed 's/&/\\&amp;/g; s/</\\&lt;/g; s/>/\\&gt;/g; s/"/\\&quot;/g'
+}
+
+launch_agent_domain() {
+  printf 'gui/%s\n' "$(id -u)"
+}
+
+require_macos_service() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    printf 'ssh-bin-paste service is currently supported on macOS only.\n' >&2
+    exit 1
+  fi
+}
+
+service_program_path() {
+  local program
+  program="$(command -v ssh-bin-paste 2>/dev/null || true)"
+  if [ -z "$program" ]; then
+    case "$0" in
+      /*) program="$0" ;;
+      *) program="$(pwd)/$0" ;;
+    esac
+  fi
+  printf '%s\n' "$program"
+}
+
+service_write_plist() {
+  local program
+  program="$(service_program_path)"
+  mkdir -p "$LAUNCH_AGENT_DIR" "$CACHE_DIR"
+  cat > "$LAUNCH_AGENT_PLIST" <<EOF2
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>$(xml_escape "$LAUNCH_AGENT_LABEL")</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(xml_escape "$program")</string>
+    <string>up</string>
+    <string>--service</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>$(xml_escape "$LAUNCH_AGENT_OUT_LOG")</string>
+  <key>StandardErrorPath</key>
+  <string>$(xml_escape "$LAUNCH_AGENT_ERR_LOG")</string>
+  <key>WorkingDirectory</key>
+  <string>$(xml_escape "$HOME")</string>
+</dict>
+</plist>
+EOF2
+}
+
+service_install() {
+  require_macos_service
+  if [ ! -f "$CONFIG_FILE" ]; then
+    printf 'No config found. Run ssh-bin-paste config first.\n' >&2
+    exit 1
+  fi
+  local domain
+  domain="$(launch_agent_domain)"
+  service_write_plist
+  launchctl bootout "$domain" "$LAUNCH_AGENT_PLIST" >/dev/null 2>&1 || true
+  launchctl bootstrap "$domain" "$LAUNCH_AGENT_PLIST"
+  launchctl kickstart -k "$domain/$LAUNCH_AGENT_LABEL"
+  printf 'installed and started %s\n' "$LAUNCH_AGENT_LABEL"
+  printf 'logs: %s and %s\n' "$LAUNCH_AGENT_OUT_LOG" "$LAUNCH_AGENT_ERR_LOG"
+}
+
+service_uninstall() {
+  require_macos_service
+  local domain
+  domain="$(launch_agent_domain)"
+  launchctl bootout "$domain" "$LAUNCH_AGENT_PLIST" >/dev/null 2>&1 || true
+  rm -f "$LAUNCH_AGENT_PLIST"
+  printf 'uninstalled %s\n' "$LAUNCH_AGENT_LABEL"
+}
+
+service_restart() {
+  require_macos_service
+  if [ ! -f "$LAUNCH_AGENT_PLIST" ]; then
+    printf 'service is not installed. Run ssh-bin-paste service install first.\n' >&2
+    exit 1
+  fi
+  launchctl kickstart -k "$(launch_agent_domain)/$LAUNCH_AGENT_LABEL"
+  printf 'restarted %s\n' "$LAUNCH_AGENT_LABEL"
+}
+
+service_status() {
+  require_macos_service
+  local domain target
+  domain="$(launch_agent_domain)"
+  target="$domain/$LAUNCH_AGENT_LABEL"
+  if [ -f "$LAUNCH_AGENT_PLIST" ]; then
+    printf 'plist: %s\n' "$LAUNCH_AGENT_PLIST"
+  else
+    printf 'plist: not installed\n'
+  fi
+  if launchctl print "$target" >/dev/null 2>&1; then
+    printf 'status: loaded\n'
+  else
+    printf 'status: not loaded\n'
+  fi
+  printf 'logs: %s and %s\n' "$LAUNCH_AGENT_OUT_LOG" "$LAUNCH_AGENT_ERR_LOG"
+}
+
 remote_helper_supports_current_protocol() {
   [ "$(run_remote_helper_quiet protocol-version 2>/dev/null || true)" = "3" ]
 }
 
 ensure_configured() {
   if [ ! -f "$CONFIG_FILE" ]; then
+    if [ "$SERVICE_MODE" = "1" ]; then
+      printf 'No config found. Run ssh-bin-paste config before installing or starting the service.\n' >&2
+      exit 1
+    fi
+    CONFIG_CREATED="1"
     run_config_wizard
     check_requirements
     install_remote_helper
@@ -585,8 +748,14 @@ EOF2
 }
 
 cmd_up() {
+  parse_remote_opts "$@"
   ensure_configured
   parse_remote_opts "$@"
+  if [ "$CONFIG_CREATED" = "1" ] && [ "$CONFIG_INSTALL_SERVICE" = "1" ]; then
+    service_install
+    printf 'service installed; ssh-bin-paste up is now managed in the background.\n'
+    exit 0
+  fi
   acquire_up_lock || exit 1
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
@@ -628,7 +797,25 @@ cmd_config() {
   run_config_wizard
   check_requirements
   install_remote_helper
+  if [ "$CONFIG_INSTALL_SERVICE" = "1" ]; then
+    service_install
+  fi
   printf '\nconfig complete\n'
+}
+
+cmd_service() {
+  local sub="${1:-status}"
+  shift || true
+  case "$sub" in
+    install) service_install "$@" ;;
+    uninstall|remove) service_uninstall "$@" ;;
+    restart) service_restart "$@" ;;
+    status) service_status "$@" ;;
+    *)
+      printf 'usage: ssh-bin-paste service install|status|restart|uninstall\n' >&2
+      exit 2
+      ;;
+  esac
 }
 
 main() {
@@ -643,6 +830,7 @@ main() {
     arm) cmd_arm "$@" ;;
     paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
+    service) cmd_service "$@" ;;
     version|--version|-V) printf '%s\n' "$VERSION" ;;
     help|--help|-h) usage ;;
     *) printf 'unknown command: %s\n\n' "$cmd" >&2; usage >&2; exit 2 ;;
