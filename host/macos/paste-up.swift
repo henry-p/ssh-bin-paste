@@ -360,6 +360,4 @@ installDedicatedShortcut()
 if config.hijackPaste {
     installPasteHijackTap()
 }
-print("ssh-bin-paste up running. \(config.shortcut.display) sends your clipboard payload to the focused tmux pane on the remote server.")
-fflush(stdout)
 _ = carbonRunApplicationEventLoop()

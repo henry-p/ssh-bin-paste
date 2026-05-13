@@ -467,6 +467,8 @@ cmd_up() {
   args+=(--shortcut "$PASTE_SHORTCUT")
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
 
+  printf 'ssh-bin-paste up running. %s sends your clipboard payload to the focused tmux pane on the remote server.\n' "$PASTE_SHORTCUT"
+
   local child_pid=""
   cleanup_up() {
     trap - INT TERM EXIT
