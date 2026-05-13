@@ -21,6 +21,7 @@ commands:
   request <client-tty> <pane-id> [tmux-session]
   request-next [token] [created-after]
   request-consume <request-id>
+  active-tmux-clients
   ensure-cache [cache-dir]
   inject <target-pane>
   scan-local-paths
@@ -179,6 +180,14 @@ request_consume() {
   rm -f "$REQUEST_DIR/$request_id"
 }
 
+active_tmux_clients() {
+  command -v tmux >/dev/null 2>&1 || return 1
+  local clients
+  clients="$(tmux list-clients -F '#{client_tty}	#{session_name}' 2>/dev/null || true)"
+  [ -n "$clients" ] || return 1
+  printf '%s\n' "$clients"
+}
+
 helper_self_path() {
   case "$0" in
     /*) printf '%s\n' "$0" ;;
@@ -270,7 +279,7 @@ unescape_typed_path() {
 }
 
 extract_local_paths_from_line() {
-  local pane_id="$1" line="$2" len i start raw char local_path tail tail_local
+  local pane_id="$1" line="$2" len i start raw char local_path tail tail_local quote quote_start j typed_raw prev
   len="${#line}"
   i=0
   while [ "$i" -lt "$len" ]; do
@@ -281,6 +290,41 @@ extract_local_paths_from_line() {
     if [ "$start" -lt 0 ]; then
       i=$((i + 1))
       continue
+    fi
+
+    quote=""
+    quote_start=-1
+    if [ "$start" -gt 0 ]; then
+      prev="${line:$((start - 1)):1}"
+      if [ "$prev" = "'" ] || [ "$prev" = '"' ]; then
+        quote="$prev"
+        quote_start=$((start - 1))
+      fi
+    fi
+
+    if [ -n "$quote" ]; then
+      raw=""
+      j="$start"
+      while [ "$j" -lt "$len" ]; do
+        char="${line:$j:1}"
+        if [ "$char" = "$quote" ]; then
+          break
+        fi
+        raw="${raw}${char}"
+        j=$((j + 1))
+      done
+      if [ -n "$raw" ] && [ "$j" -lt "$len" ] && [ "${line:$j:1}" = "$quote" ]; then
+        typed_raw="${line:$quote_start:$((j - quote_start + 1))}"
+        local_path="$(unescape_typed_path "$raw")"
+        case "$local_path" in
+          file://localhost/*) local_path="${local_path#file://localhost}" ;;
+          file://*) local_path="${local_path#file://}" ;;
+        esac
+        printf '%s\t%s\t%s\n' "$pane_id" "$typed_raw" "$local_path"
+        i=$((j + 1))
+        continue
+      fi
+      return 0
     fi
 
     raw=""
@@ -375,11 +419,11 @@ replace_local_path() {
   case "$typed_path" in
     /*|file:///*|file://localhost/*) tmux send-keys -t "$target" BSpace ;;
   esac
-  remove_leftover_path_slash "$target"
+  remove_leftover_path_boundary "$target"
   printf '%s' "$remote_path" | inject "$target"
 }
 
-remove_leftover_path_slash() {
+remove_leftover_path_boundary() {
   local target="$1" cursor_y line trimmed
   cursor_y="$(tmux display-message -p -t "$target" '#{cursor_y}' 2>/dev/null || printf 0)"
   case "$cursor_y" in ''|*[!0-9]*) cursor_y=0 ;; esac
@@ -388,9 +432,11 @@ remove_leftover_path_slash() {
   if [ "${trimmed%"${trimmed#?}"}" = "" ]; then
     return 0
   fi
-  if [ "${trimmed: -1}" = "/" ]; then
+  case "${trimmed: -1}" in
+    /|"'"|'"')
     tmux send-keys -t "$target" BSpace
-  fi
+      ;;
+  esac
 }
 
 cleanup() {
@@ -443,7 +489,7 @@ case "${1:-}" in
     printf '%s\n' "$VERSION"
     ;;
   protocol-version)
-    printf '1\n'
+    printf '4\n'
     ;;
   install-tmux-binding)
     install_tmux_binding
@@ -463,6 +509,9 @@ case "${1:-}" in
   request-consume)
     shift
     request_consume "${1:-}"
+    ;;
+  active-tmux-clients)
+    active_tmux_clients
     ;;
   ensure-cache)
     shift

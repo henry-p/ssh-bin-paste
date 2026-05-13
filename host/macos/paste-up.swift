@@ -9,8 +9,6 @@ func carbonRunApplicationEventLoop() -> OSStatus
 
 struct DaemonConfig {
     let command: String
-    let host: String
-    let sshCommand: String?
     let shortcut: Shortcut
     let hijackPaste: Bool
     let allowlistedApps: Set<String>
@@ -97,10 +95,7 @@ func sendRemotePasteSignal() {
 }
 
 func remoteArguments(commandName: String, token: String) -> [String] {
-    if let sshCommand = config.sshCommand {
-        return [config.command, commandName, "--request-token", token, "--ssh", sshCommand]
-    }
-    return [config.command, commandName, "--request-token", token, "--host", config.host]
+    return [config.command, commandName, "--request-token", token]
 }
 
 func runCommandSync(_ arguments: [String]) throws -> Int32 {
@@ -342,15 +337,13 @@ guard let command = valueAfter("--command") else {
     exit(2)
 }
 
-let host = valueAfter("--host") ?? "example-remote"
-let sshCommand = valueAfter("--ssh")
 let shortcutText = valueAfter("--shortcut") ?? "Cmd+Shift+V"
 guard let shortcut = parseShortcut(shortcutText) else {
     fputs("Invalid paste shortcut: \(shortcutText)\n", stderr)
     exit(2)
 }
 let apps = Set((valueAfter("--allowlisted-apps") ?? "").split(separator: ",").map(String.init))
-config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, shortcut: shortcut, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
+config = DaemonConfig(command: command, shortcut: shortcut, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
 
 if !AXIsProcessTrusted() {
     print("warning: Accessibility permission is not granted. macOS may block sending Ctrl+] into the focused SSH terminal.")

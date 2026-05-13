@@ -20,7 +20,7 @@ curl -fsSL \
 ```sh
 ssh-bin-paste up
 ```
-On first run, you will be asked to enter the ssh command you use to connect to your remote.
+On first run, you will be asked to enter one or more SSH commands for your remotes.
 
 ### 3. On the remote, run Claude or Codex and paste a file
 ```sh
@@ -40,8 +40,9 @@ Windows/Linux support coming soon.
 ## Commands
 | Command | Where | Purpose |
 | --- | --- | --- |
-| `ssh-bin-paste config` | Host | Set the SSH command, install the remote helper, and add the tmux binding. |
-| `ssh-bin-paste up` | Host | Configure on first run, then run the paste shortcut listener. |
+| `ssh-bin-paste config` | Host | Set remote SSH commands, install remote helpers, and add tmux bindings. |
+| `ssh-bin-paste remotes` | Host | List, add, update, or remove configured remotes. |
+| `ssh-bin-paste up` | Host | Configure on first run, then run one paste shortcut listener for all active remotes. |
 | `ssh-bin-paste service` `install`/`status`/`restart`/`uninstall` | Host | Service commands for running `ssh-bin-paste up` automatically when you log in. |
 
 ## Requirements
@@ -50,5 +51,4 @@ Windows/Linux support coming soon.
 **Remote**: `tmux` and Claude Code or Codex
 
 ## Coming soon
-- Multiple remotes
 - Windows/Linux support

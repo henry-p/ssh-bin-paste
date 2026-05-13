@@ -7,6 +7,9 @@ CONFIG_FILE="$CONFIG_DIR/config.sh"
 CACHE_DIR="$HOME/.cache/ssh-bin-paste"
 STATE_DIR="$CACHE_DIR"
 UP_LOCK_DIR="$STATE_DIR/up.lock"
+ACTIVE_REMOTES_FILE="$STATE_DIR/active-remotes.tsv"
+ACTIVE_REMOTE_TTL_SECONDS="6"
+ACTIVE_DISCOVERY_INTERVAL_SECONDS="2"
 ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
 REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
@@ -15,6 +18,7 @@ SHORTCUT_RECORDER="$ASSET_DIR/shortcut-recorder.swift"
 
 HOST="example-remote"
 SSH_COMMAND=""
+REMOTE_COUNT=""
 AGENT_CODEX_COMMAND="codex"
 AGENT_CLAUDE_COMMAND="claude"
 REMOTE_CACHE_DIR="~/.cache/ssh-bin-paste/files"
@@ -35,6 +39,7 @@ usage: ssh-bin-paste <command> [args]
 
 commands:
   config             configure SSH and install the remote helper
+  remotes            list, add, update, or remove configured remotes
   up                 run the paste shortcut listener
   service            manage the macOS login service
   version            print version
@@ -54,10 +59,20 @@ write_config_value() {
 
 save_config() {
   mkdir -p "$CONFIG_DIR"
+  normalize_remote_config
   {
     printf '# ssh-bin-paste config\n'
     write_config_value HOST "$HOST"
-    write_config_value SSH_COMMAND "$SSH_COMMAND"
+    write_config_value REMOTE_COUNT "$REMOTE_COUNT"
+    local i name ssh
+    i=1
+    while [ "$i" -le "$REMOTE_COUNT" ]; do
+      name="$(remote_name "$i")"
+      ssh="$(remote_ssh "$i")"
+      write_config_value "REMOTE_${i}_NAME" "$name"
+      write_config_value "REMOTE_${i}_SSH_COMMAND" "$ssh"
+      i=$((i + 1))
+    done
     write_config_value AGENT_CODEX_COMMAND "$AGENT_CODEX_COMMAND"
     write_config_value AGENT_CLAUDE_COMMAND "$AGENT_CLAUDE_COMMAND"
     write_config_value REMOTE_CACHE_DIR "$REMOTE_CACHE_DIR"
@@ -75,6 +90,44 @@ load_config() {
     # shellcheck disable=SC1090
     . "$CONFIG_FILE"
   fi
+  normalize_remote_config
+}
+
+remote_name() {
+  local index="$1" var
+  var="REMOTE_${index}_NAME"
+  eval "printf '%s\n' \"\${$var:-remote$index}\""
+}
+
+remote_ssh() {
+  local index="$1" var
+  var="REMOTE_${index}_SSH_COMMAND"
+  eval "printf '%s\n' \"\${$var:-}\""
+}
+
+set_remote() {
+  local index="$1" name="$2" ssh_command="$3"
+  eval "REMOTE_${index}_NAME=\$name"
+  eval "REMOTE_${index}_SSH_COMMAND=\$ssh_command"
+}
+
+normalize_remote_config() {
+  case "${REMOTE_COUNT:-}" in ''|*[!0-9]*) REMOTE_COUNT="0" ;; esac
+  if [ "$REMOTE_COUNT" -gt 0 ]; then
+    return 0
+  fi
+  if [ -n "${SSH_COMMAND:-}" ]; then
+    REMOTE_COUNT="1"
+    set_remote 1 "default" "$SSH_COMMAND"
+    SSH_COMMAND=""
+    return 0
+  fi
+  if [ -n "${HOST:-}" ] && [ "$HOST" != "example-remote" ]; then
+    REMOTE_COUNT="1"
+    set_remote 1 "default" "ssh $HOST"
+    return 0
+  fi
+  REMOTE_COUNT="0"
 }
 
 prompt() {
@@ -105,6 +158,36 @@ validate_shortcut() {
   esac
 }
 
+prompt_yes_no() {
+  local label="$1" default="$2" answer normalized choices display_answer
+  while true; do
+    case "$default" in
+      no) choices=$'\033[4mNo\033[24m/Yes' ;;
+      yes) choices=$'No/\033[4mYes\033[24m' ;;
+      *) choices="$default" ;;
+    esac
+    printf '%s [%s]: ' "$label" "$choices" >/dev/tty
+    IFS= read -r answer </dev/tty
+    if [ -z "$answer" ]; then
+      answer="$default"
+    fi
+    normalized="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized" in
+      y|yes)
+        display_answer="Yes"
+        printf '\033[1A\r\033[2K%s [%s]: %s\n' "$label" "$choices" "$display_answer" >/dev/tty
+        return 0
+        ;;
+      n|no)
+        display_answer="No"
+        printf '\033[1A\r\033[2K%s [%s]: %s\n' "$label" "$choices" "$display_answer" >/dev/tty
+        return 1
+        ;;
+      *) printf 'Please answer yes or no.\n' >/dev/tty ;;
+    esac
+  done
+}
+
 prompt_paste_shortcut() {
   local default="$1" recorded
   while true; do
@@ -129,11 +212,33 @@ run_config_wizard() {
   load_config
   mkdir -p "$CONFIG_DIR"
   printf 'ssh-bin-paste config\n\n' >/dev/tty
-  local default_ssh="${SSH_COMMAND:-ssh user@example-remote}"
+  local i default_name existing_name default_ssh name ssh add_more
+  REMOTE_COUNT="0"
+  i=1
   while true; do
-    SSH_COMMAND="$(prompt 'SSH command' "$default_ssh")"
-    if validate_ssh_command "$SSH_COMMAND"; then break; fi
-    printf 'SSH command must start with ssh.\n' >/dev/tty
+    default_name="remote$i"
+    if [ "$i" = "1" ]; then
+      default_name="default"
+    fi
+    default_ssh="$(remote_ssh "$i")"
+    if [ -z "$default_ssh" ]; then
+      default_ssh="ssh user@example-remote"
+    fi
+    existing_name="$(remote_name "$i")"
+    case "$existing_name" in remote"$i") existing_name="$default_name" ;; esac
+    name="$(prompt 'Remote name' "$existing_name")"
+    while true; do
+      ssh="$(prompt 'SSH command' "$default_ssh")"
+      if validate_ssh_command "$ssh"; then break; fi
+      printf 'SSH command must start with ssh.\n' >/dev/tty
+    done
+    set_remote "$i" "$name" "$ssh"
+    REMOTE_COUNT="$i"
+    if ! prompt_yes_no 'Add another remote' 'no'; then
+      break
+    fi
+    i=$((i + 1))
+    printf '\n' >/dev/tty
   done
   printf '\n' >/dev/tty
   PASTE_SHORTCUT="$(prompt_paste_shortcut "${PASTE_SHORTCUT:-Cmd+Shift+V}")"
@@ -169,14 +274,19 @@ ssh_array_eval() {
   eval "SSH_PARTS=($SSH_COMMAND)"
 }
 
+ssh_array_add_no_stdin() {
+  SSH_PARTS=("${SSH_PARTS[0]}" -n "${SSH_PARTS[@]:1}")
+}
+
 run_ssh() {
   local remote_command="$1"
   if [ -n "$SSH_COMMAND" ]; then
     local -a SSH_PARTS
     ssh_array_eval
+    ssh_array_add_no_stdin
     "${SSH_PARTS[@]}" "$remote_command"
   else
-    ssh "$HOST" "$remote_command"
+    ssh -n "$HOST" "$remote_command"
   fi
 }
 
@@ -226,6 +336,107 @@ run_remote_helper_stdin() {
   shift
   remote_cmd="$(remote_helper_command "$@")"
   run_ssh_stdin "$remote_cmd" "$input_file"
+}
+
+with_remote_ssh() {
+  local remote_ssh_command="$1"
+  shift
+  local old_ssh_command="$SSH_COMMAND" old_host="$HOST"
+  SSH_COMMAND="$remote_ssh_command"
+  HOST=""
+  "$@"
+  local status="$?"
+  SSH_COMMAND="$old_ssh_command"
+  HOST="$old_host"
+  return "$status"
+}
+
+remote_record_quote() {
+  local key="$1" value="$2"
+  printf '%s=' "$key"
+  shell_quote "$value"
+  printf '\n'
+}
+
+configured_remotes() {
+  normalize_remote_config
+  local i name ssh
+  i=1
+  while [ "$i" -le "$REMOTE_COUNT" ]; do
+    name="$(remote_name "$i")"
+    ssh="$(remote_ssh "$i")"
+    if [ -n "$ssh" ]; then
+      printf '%s\t%s\n' "$name" "$ssh"
+    fi
+    i=$((i + 1))
+  done
+}
+
+remote_index_by_name() {
+  local wanted="$1" i name
+  i=1
+  while [ "$i" -le "$REMOTE_COUNT" ]; do
+    name="$(remote_name "$i")"
+    if [ "$name" = "$wanted" ]; then
+      printf '%s\n' "$i"
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  return 1
+}
+
+active_remotes() {
+  local now seen_at name ssh count
+  now="$(date +%s)"
+  if [ ! -f "$ACTIVE_REMOTES_FILE" ]; then
+    return 0
+  fi
+  while IFS="$(printf '\t')" read -r name ssh seen_at count; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    case "$seen_at" in ''|*[!0-9]*) continue ;; esac
+    if [ $((now - seen_at)) -le "$ACTIVE_REMOTE_TTL_SECONDS" ]; then
+      printf '%s\t%s\n' "$name" "$ssh"
+    fi
+  done < "$ACTIVE_REMOTES_FILE"
+}
+
+discover_active_remotes_once() {
+  load_config
+  mkdir -p "$STATE_DIR"
+  local tmpdir tmpfile now name ssh pid
+  tmpdir="$(mktemp -d)"
+  tmpfile="$(mktemp "$STATE_DIR/active-remotes.XXXXXX")"
+  now="$(date +%s)"
+  while IFS="$(printf '\t')" read -r name ssh; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    (
+      SSH_COMMAND="$ssh"
+      HOST=""
+      local clients count
+      clients="$(run_remote_helper_quiet active-tmux-clients || true)"
+      if [ -n "$clients" ]; then
+        count="$(printf '%s\n' "$clients" | sed '/^$/d' | wc -l | tr -d ' ')"
+        printf '%s\t%s\t%s\t%s\n' "$name" "$ssh" "$now" "$count" > "$tmpdir/$name"
+      fi
+    ) &
+  done <<EOF2
+$(configured_remotes)
+EOF2
+  for pid in $(jobs -p); do
+    wait "$pid" 2>/dev/null || true
+  done
+  cat "$tmpdir"/* > "$tmpfile" 2>/dev/null || true
+  mv "$tmpfile" "$ACTIVE_REMOTES_FILE"
+  rm -rf "$tmpdir"
+}
+
+active_remote_discovery_loop() {
+  set +m 2>/dev/null || true
+  while true; do
+    discover_active_remotes_once || true
+    sleep "$ACTIVE_DISCOVERY_INTERVAL_SECONDS"
+  done
 }
 
 first_word() {
@@ -306,20 +517,26 @@ force_terminate_pid_tree() {
 check_requirements() {
   load_config
   parse_remote_opts "$@"
-  local ok=1 out codex_bin claude_bin codex_ok=0 claude_ok=0
+  local ok=1 out codex_bin claude_bin codex_ok=0 claude_ok=0 name ssh
   codex_bin="$(first_word "$AGENT_CODEX_COMMAND")"
   claude_bin="$(first_word "$AGENT_CLAUDE_COMMAND")"
   check_line 1 'local platform' "$(uname -s)" || ok=0
   command -v ssh >/dev/null 2>&1 && check_line 1 'local ssh' "$(command -v ssh)" || { check_line 0 'local ssh' 'not found'; ok=0; }
   command -v swift >/dev/null 2>&1 && check_line 1 'local swift' "$(command -v swift)" || { check_line 0 'local swift' 'not found'; ok=0; }
-  if out="$(run_ssh 'printf ok' 2>&1)" && [ "$out" = "ok" ]; then check_line 1 'ssh access' ok; else check_line 0 'ssh access' "$out"; ok=0; fi
-  if out="$(run_ssh 'command -v tmux 2>/dev/null || true' 2>&1)" && [ -n "$out" ]; then check_line 1 'remote tmux' "$out"; else check_line 0 'remote tmux' 'not found'; ok=0; fi
-  if [ -n "$codex_bin" ] && out="$(run_ssh "command -v $(shell_quote "$codex_bin") 2>/dev/null || true" 2>&1)" && [ -n "$out" ]; then check_line 1 'remote Codex' "$out"; codex_ok=1; else printf 'info remote Codex: %s not found\n' "${codex_bin:-codex}"; fi
-  if [ -n "$claude_bin" ] && out="$(run_ssh "command -v $(shell_quote "$claude_bin") 2>/dev/null || true" 2>&1)" && [ -n "$out" ]; then check_line 1 'remote Claude Code' "$out"; claude_ok=1; else printf 'info remote Claude Code: %s not found\n' "${claude_bin:-claude}"; fi
-  if [ "$codex_ok" = "0" ] && [ "$claude_ok" = "0" ]; then check_line 0 'remote agent' 'neither Codex nor Claude Code was found'; ok=0; fi
-  local cache_expr
-  cache_expr="$(remote_path_expr "$REMOTE_CACHE_DIR")"
-  if out="$(run_ssh "mkdir -p $cache_expr && test -w $cache_expr && printf ok" 2>&1)" && [ "$out" = "ok" ]; then check_line 1 'remote cache dir' "$REMOTE_CACHE_DIR"; else check_line 0 'remote cache dir' "$out"; ok=0; fi
+  while IFS="$(printf '\t')" read -r name ssh; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    SSH_COMMAND="$ssh"
+    if out="$(run_ssh 'printf ok' 2>&1)" && [ "$out" = "ok" ]; then check_line 1 "ssh access ($name)" ok; else check_line 0 "ssh access ($name)" "$out"; ok=0; fi
+    if out="$(run_ssh 'command -v tmux 2>/dev/null || true' 2>&1)" && [ -n "$out" ]; then check_line 1 "remote tmux ($name)" "$out"; else check_line 0 "remote tmux ($name)" 'not found'; ok=0; fi
+    if [ -n "$codex_bin" ] && out="$(run_ssh "command -v $(shell_quote "$codex_bin") 2>/dev/null || true" 2>&1)" && [ -n "$out" ]; then check_line 1 "remote Codex ($name)" "$out"; codex_ok=1; else printf 'info remote Codex (%s): %s not found\n' "$name" "${codex_bin:-codex}"; fi
+    if [ -n "$claude_bin" ] && out="$(run_ssh "command -v $(shell_quote "$claude_bin") 2>/dev/null || true" 2>&1)" && [ -n "$out" ]; then check_line 1 "remote Claude Code ($name)" "$out"; claude_ok=1; else printf 'info remote Claude Code (%s): %s not found\n' "$name" "${claude_bin:-claude}"; fi
+    local cache_expr
+    cache_expr="$(remote_path_expr "$REMOTE_CACHE_DIR")"
+    if out="$(run_ssh "mkdir -p $cache_expr && test -w $cache_expr && printf ok" 2>&1)" && [ "$out" = "ok" ]; then check_line 1 "remote cache dir ($name)" "$REMOTE_CACHE_DIR"; else check_line 0 "remote cache dir ($name)" "$out"; ok=0; fi
+  done <<EOF2
+$(configured_remotes)
+EOF2
+  if [ "$codex_ok" = "0" ] && [ "$claude_ok" = "0" ]; then check_line 0 'remote agent' 'neither Codex nor Claude Code was found on any configured remote'; ok=0; fi
   [ "$ok" = "1" ]
 }
 
@@ -353,8 +570,6 @@ EOF2
 }
 
 install_remote_helper() {
-  load_config
-  parse_remote_opts "$@"
   [ -f "$REMOTE_HELPER_ASSET" ] || { printf 'missing asset: %s\n' "$REMOTE_HELPER_ASSET" >&2; exit 1; }
   local dir wrapper_path helper_name install_cmd verify wrapper tmp_wrapper
   dir="$(remote_dirname "$REMOTE_HELPER_PATH")"
@@ -386,6 +601,17 @@ done"
   fi
 }
 
+install_remote_helpers() {
+  local name ssh
+  while IFS="$(printf '\t')" read -r name ssh; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    printf 'remote %s: ' "$name"
+    with_remote_ssh "$ssh" install_remote_helper
+  done <<EOF2
+$(configured_remotes)
+EOF2
+}
+
 host_service_script() {
   case "$(uname -s)" in
     Darwin) printf '%s\n' "$ASSET_DIR/host/macos/service.sh" ;;
@@ -408,8 +634,38 @@ host_service_program_path() {
   printf '%s\n' "$program"
 }
 
-remote_helper_supports_current_protocol() {
-  [ "$(run_remote_helper_quiet protocol-version 2>/dev/null || true)" = "1" ]
+remote_helper_protocol_status() {
+  local protocol
+  protocol="$(run_remote_helper_quiet protocol-version 2>/dev/null || true)"
+  if [ "$protocol" = "4" ]; then
+    printf 'current\n'
+  elif [ -n "$protocol" ]; then
+    printf 'old\n'
+  else
+    printf 'unreachable\n'
+  fi
+}
+
+update_old_remote_helpers() {
+  local name ssh status updated=0
+  while IFS="$(printf '\t')" read -r name ssh; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    status="$(with_remote_ssh "$ssh" remote_helper_protocol_status)"
+    case "$status" in
+      current) ;;
+      old)
+        if [ "$updated" = "0" ]; then
+          printf 'remote helper is missing the current paste protocol; updating it now.\n'
+          updated=1
+        fi
+        printf 'remote %s: ' "$name"
+        with_remote_ssh "$ssh" install_remote_helper
+        ;;
+      unreachable) ;;
+    esac
+  done <<EOF2
+$(configured_remotes)
+EOF2
 }
 
 ensure_configured() {
@@ -421,14 +677,11 @@ ensure_configured() {
     CONFIG_CREATED="1"
     run_config_wizard
     check_requirements
-    install_remote_helper
+    install_remote_helpers
     printf '\nconfig complete\n'
   fi
   load_config
-  if ! remote_helper_supports_current_protocol; then
-    printf 'remote helper is missing the current paste protocol; updating it now.\n'
-    install_remote_helper
-  fi
+  update_old_remote_helpers
 }
 
 extension_for_mime() {
@@ -490,12 +743,100 @@ wait_for_target_request() {
   return 1
 }
 
+wait_for_active_target_request() {
+  local after="${1:-0}" token="${2:-}" deadline request_dir result_file now name ssh pid file newest_file newest_created created_at request_id pane_id
+  deadline=$((SECONDS + 5))
+  while [ "$SECONDS" -le "$deadline" ]; do
+    request_dir="$(mktemp -d)"
+    while IFS="$(printf '\t')" read -r name ssh; do
+      [ -n "$name" ] && [ -n "$ssh" ] || continue
+      (
+        SSH_COMMAND="$ssh"
+        HOST=""
+        local request
+        request="$(run_remote_helper_quiet request-next "$token" "$after" || true)"
+        if [ -n "$request" ]; then
+          {
+            remote_record_quote remote_name "$name"
+            remote_record_quote remote_ssh "$ssh"
+            printf '%s\n' "$request"
+          } > "$request_dir/$(printf '%s' "$name" | cksum | awk '{print $1}')"
+        fi
+      ) &
+    done <<EOF2
+$(active_remotes)
+EOF2
+    for pid in $(jobs -p); do
+      wait "$pid" 2>/dev/null || true
+    done
+
+    newest_file=""
+    newest_created=0
+    for file in "$request_dir"/*; do
+      [ -f "$file" ] || continue
+      created_at="$(record_field "$(cat "$file")" created_at)"
+      case "$created_at" in ''|*[!0-9]*) created_at=0 ;; esac
+      if [ "$created_at" -ge "$newest_created" ]; then
+        newest_created="$created_at"
+        newest_file="$file"
+      fi
+    done
+    if [ -n "$newest_file" ]; then
+      result_file="$(mktemp)"
+      cp "$newest_file" "$result_file"
+      rm -rf "$request_dir"
+      request_id="$(record_field "$(cat "$result_file")" request_id)"
+      ssh="$(record_field "$(cat "$result_file")" remote_ssh)"
+      pane_id="$(record_field "$(cat "$result_file")" pane_id)"
+      if [ -n "$request_id" ] && [ -n "$ssh" ] && [ -n "$pane_id" ]; then
+        with_remote_ssh "$ssh" run_remote_helper request-consume "$request_id" >/dev/null 2>&1 || true
+        cat "$result_file"
+        rm -f "$result_file"
+        return 0
+      fi
+      rm -f "$result_file"
+    else
+      rm -rf "$request_dir"
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
 cmd_arm() {
   load_config
   parse_remote_opts "$@"
   if [ -z "$REQUEST_TOKEN" ]; then
     printf 'missing --request-token\n' >&2
     exit 2
+  fi
+  if [ -z "$SSH_COMMAND" ]; then
+    local armed=0 name ssh pid tmpdir
+    tmpdir="$(mktemp -d)"
+    while IFS="$(printf '\t')" read -r name ssh; do
+      [ -n "$name" ] && [ -n "$ssh" ] || continue
+      (
+        SSH_COMMAND="$ssh"
+        HOST=""
+        if run_remote_helper_quiet request-arm "$REQUEST_TOKEN" >/dev/null; then
+          printf ok > "$tmpdir/$(printf '%s' "$name" | cksum | awk '{print $1}')"
+        fi
+      ) &
+    done <<EOF2
+$(active_remotes)
+EOF2
+    for pid in $(jobs -p); do
+      wait "$pid" 2>/dev/null || true
+    done
+    if ls "$tmpdir"/* >/dev/null 2>&1; then
+      armed=1
+    fi
+    rm -rf "$tmpdir"
+    if [ "$armed" = "1" ]; then
+      return 0
+    fi
+    printf 'No active tmux-backed remote detected. Connect to your remote, attach tmux, then try again.\n' >&2
+    exit 1
   fi
   run_remote_helper_quiet request-arm "$REQUEST_TOKEN" >/dev/null || {
     printf 'Remote helper is out of date or unavailable. Restart ssh-bin-paste up so it can update the remote helper.\n' >&2
@@ -507,11 +848,28 @@ cmd_paste() {
   load_config
   parse_remote_opts "$@"
   [ -f "$CLIPBOARD_HELPER" ] || { printf 'missing asset: %s\n' "$CLIPBOARD_HELPER" >&2; exit 1; }
-  local output_path capture local_path mime ext cache remote_path target now uuid
-  target="$(wait_for_target_request "$REQUEST_AFTER" "$REQUEST_TOKEN")" || {
-    printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
+  local output_path capture local_path mime ext cache remote_path target now uuid request remote_name remote_ssh
+  if [ -n "$SSH_COMMAND" ]; then
+    target="$(wait_for_target_request "$REQUEST_AFTER" "$REQUEST_TOKEN")" || {
+      printf 'No paste target detected. Make sure the remote agent is running inside tmux and the ssh-bin-paste tmux binding is installed.\n' >&2
+      exit 1
+    }
+    remote_name="remote"
+    remote_ssh="$SSH_COMMAND"
+  else
+    request="$(wait_for_active_target_request "$REQUEST_AFTER" "$REQUEST_TOKEN")" || {
+      printf 'No active paste target detected. Focus a remote tmux agent pane, then try again.\n' >&2
+      exit 1
+    }
+    target="$(record_field "$request" pane_id)"
+    remote_name="$(record_field "$request" remote_name)"
+    remote_ssh="$(record_field "$request" remote_ssh)"
+  fi
+  if [ -z "$target" ] || [ -z "$remote_ssh" ]; then
+    printf 'Paste target was incomplete. Restart ssh-bin-paste up and try again.\n' >&2
     exit 1
-  }
+  fi
+  SSH_COMMAND="$remote_ssh"
   progress_bar 10 'target detected'
   output_path="$(mktemp -t ssh-bin-paste.XXXXXX).png"
   capture="$(swift "$CLIPBOARD_HELPER" --output "$output_path")"
@@ -529,7 +887,7 @@ cmd_paste() {
   progress_bar 85 'injecting'
   printf '%s' "$remote_path" | run_remote_helper_stdin /dev/stdin inject "$target"
   progress_bar 100 'pasted'
-  printf 'pasted %s into %s\n' "$remote_path" "$target"
+  printf 'pasted %s into %s on %s\n' "$remote_path" "$target" "$remote_name"
 }
 
 drop_seen_recently() {
@@ -574,7 +932,7 @@ resolve_dropped_local_path() {
 }
 
 handle_dropped_local_path() {
-  local pane_id="$1" typed_path="$2" local_path="$3" resolved cache ext now uuid remote_path
+  local remote_name="$1" remote_ssh="$2" pane_id="$3" typed_path="$4" local_path="$5" resolved cache ext now uuid remote_path
   [ -n "$pane_id" ] && [ -n "$typed_path" ] && [ -n "$local_path" ] || return 0
   case "$local_path" in
     /Users/*|/Volumes/*|/private/var/*) ;;
@@ -583,7 +941,8 @@ handle_dropped_local_path() {
   resolved="$(resolve_dropped_local_path "$typed_path" "$local_path")" || return 0
   typed_path="$(printf '%s\n' "$resolved" | awk -F '\t' 'NR == 1 { print $1 }')"
   local_path="$(printf '%s\n' "$resolved" | awk -F '\t' 'NR == 1 { print $2 }')"
-  drop_seen_recently "$pane_id|$typed_path" && return 0
+  drop_seen_recently "$remote_name|$pane_id|$typed_path" && return 0
+  SSH_COMMAND="$remote_ssh"
 
   progress_bar 10 'dropped path detected' 'dropped file'
   cache="$(run_remote_helper ensure-cache "$REMOTE_CACHE_DIR")"
@@ -597,17 +956,46 @@ handle_dropped_local_path() {
   progress_bar 80 'rewriting remote input' 'dropped file'
   run_remote_helper replace-local-path "$pane_id" "$typed_path" "$remote_path" >/dev/null
   progress_bar 100 'rewritten' 'dropped file'
-  printf 'rewrote dropped path into %s\n' "$pane_id"
+  printf 'rewrote dropped path into %s on %s\n' "$pane_id" "$remote_name"
+}
+
+scan_active_local_paths() {
+  local tmpdir name ssh pid file
+  tmpdir="$(mktemp -d)"
+  while IFS="$(printf '\t')" read -r name ssh; do
+    [ -n "$name" ] && [ -n "$ssh" ] || continue
+    (
+      SSH_COMMAND="$ssh"
+      HOST=""
+      local output
+      output="$(run_remote_helper_quiet scan-local-paths 2>/dev/null || true)"
+      if [ -n "$output" ]; then
+        while IFS="$(printf '\t')" read -r pane_id typed_path local_path; do
+          [ -n "$pane_id" ] || continue
+          printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$ssh" "$pane_id" "$typed_path" "$local_path"
+        done <<EOF2
+$output
+EOF2
+      fi
+    ) > "$tmpdir/$(printf '%s' "$name" | cksum | awk '{print $1}')" &
+  done <<EOF2
+$(active_remotes)
+EOF2
+  for pid in $(jobs -p); do
+    wait "$pid" 2>/dev/null || true
+  done
+  cat "$tmpdir"/* 2>/dev/null || true
+  rm -rf "$tmpdir"
 }
 
 drop_watch_loop() {
-  local pane_id typed_path local_path output
+  local remote_name remote_ssh pane_id typed_path local_path output
   set +m 2>/dev/null || true
   while true; do
-    output="$(run_remote_helper_quiet scan-local-paths 2>/dev/null || true)"
-    while IFS="$(printf '\t')" read -r pane_id typed_path local_path; do
+    output="$(scan_active_local_paths)"
+    while IFS="$(printf '\t')" read -r remote_name remote_ssh pane_id typed_path local_path; do
       [ -n "$pane_id" ] || continue
-      handle_dropped_local_path "$pane_id" "$typed_path" "$local_path" || true
+      handle_dropped_local_path "$remote_name" "$remote_ssh" "$pane_id" "$typed_path" "$local_path" || true
     done <<EOF2
 $output
 EOF2
@@ -622,15 +1010,18 @@ cmd_up() {
   acquire_up_lock || exit 1
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
-  if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
   args+=(--shortcut "$PASTE_SHORTCUT")
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
 
   printf 'ssh-bin-paste up running. %s sends your clipboard payload to the focused tmux pane on the remote server.\n' "$PASTE_SHORTCUT"
 
-  local child_pid="" drop_watch_pid=""
+  local child_pid="" drop_watch_pid="" discovery_pid=""
   cleanup_up() {
     trap - INT TERM EXIT
+    if [ -n "$discovery_pid" ]; then
+      force_terminate_pid_tree "$discovery_pid"
+      wait "$discovery_pid" 2>/dev/null || true
+    fi
     if [ -n "$drop_watch_pid" ]; then
       force_terminate_pid_tree "$drop_watch_pid"
       wait "$drop_watch_pid" 2>/dev/null || true
@@ -644,6 +1035,9 @@ cmd_up() {
   trap 'cleanup_up; exit 130' INT
   trap 'cleanup_up; exit 143' TERM
   trap 'cleanup_up' EXIT
+
+  (active_remote_discovery_loop) &
+  discovery_pid="$!"
 
   (drop_watch_loop) &
   drop_watch_pid="$!"
@@ -659,8 +1053,87 @@ cmd_up() {
 cmd_config() {
   run_config_wizard
   check_requirements
-  install_remote_helper
+  install_remote_helpers
   printf '\nconfig complete\n'
+}
+
+cmd_remotes() {
+  load_config
+  local sub="${1:-list}"
+  shift || true
+  case "$sub" in
+    list)
+      if [ "$REMOTE_COUNT" = "0" ]; then
+        printf 'No remotes configured. Run ssh-bin-paste config or ssh-bin-paste remotes add.\n'
+        return 0
+      fi
+      printf 'Configured remotes:\n'
+      local i name ssh
+      i=1
+      while [ "$i" -le "$REMOTE_COUNT" ]; do
+        name="$(remote_name "$i")"
+        ssh="$(remote_ssh "$i")"
+        printf '  %s  %s\n' "$name" "$ssh"
+        i=$((i + 1))
+      done
+      ;;
+    add|set)
+      local name ssh index
+      name="${1:-}"
+      if [ -n "$name" ]; then
+        shift || true
+      else
+        name="$(prompt 'Remote name' 'default')"
+      fi
+      if [ "$#" -gt 0 ]; then
+        ssh="$*"
+      else
+        ssh="$(prompt 'SSH command' 'ssh user@example-remote')"
+      fi
+      if ! validate_ssh_command "$ssh"; then
+        printf 'SSH command must start with ssh.\n' >&2
+        exit 2
+      fi
+      index="$(remote_index_by_name "$name" 2>/dev/null || true)"
+      if [ -z "$index" ]; then
+        REMOTE_COUNT=$((REMOTE_COUNT + 1))
+        index="$REMOTE_COUNT"
+      fi
+      set_remote "$index" "$name" "$ssh"
+      save_config
+      printf 'saved remote %s\n' "$name"
+      with_remote_ssh "$ssh" install_remote_helper
+      ;;
+    remove|rm|delete)
+      local remove_name="${1:-}" i next name ssh
+      if [ -z "$remove_name" ]; then
+        printf 'usage: ssh-bin-paste remotes remove <name>\n' >&2
+        exit 2
+      fi
+      if ! remote_index_by_name "$remove_name" >/dev/null 2>&1; then
+        printf 'remote not found: %s\n' "$remove_name" >&2
+        exit 1
+      fi
+      next=0
+      i=1
+      while [ "$i" -le "$REMOTE_COUNT" ]; do
+        name="$(remote_name "$i")"
+        ssh="$(remote_ssh "$i")"
+        if [ "$name" != "$remove_name" ]; then
+          next=$((next + 1))
+          set_remote "$next" "$name" "$ssh"
+        fi
+        i=$((i + 1))
+      done
+      REMOTE_COUNT="$next"
+      save_config
+      printf 'removed remote %s\n' "$remove_name"
+      ;;
+    *)
+      printf 'usage: ssh-bin-paste remotes [list|add|set|remove]\n' >&2
+      exit 2
+      ;;
+  esac
 }
 
 cmd_service() {
@@ -682,6 +1155,7 @@ main() {
   shift || true
   case "$cmd" in
     config) cmd_config "$@" ;;
+    remotes) cmd_remotes "$@" ;;
     arm) cmd_arm "$@" ;;
     paste) cmd_paste "$@" ;;
     up) cmd_up "$@" ;;
