@@ -79,7 +79,10 @@ prompt() {
   while true; do
     printf '%s [%s]: ' "$label" "$default" >/dev/tty
     IFS= read -r answer </dev/tty
-    answer="${answer:-$default}"
+    if [ -z "$answer" ]; then
+      answer="$default"
+      printf '%s\n' "$answer" >/dev/tty
+    fi
     if [ -n "$answer" ]; then
       printf '%s\n' "$answer"
       return 0
