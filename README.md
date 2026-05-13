@@ -22,14 +22,15 @@ ssh-bin-paste up
 ```
 On first run, you will be asked to enter the ssh command you use to connect to your remote, as well as the shortcut you want to use for pasting files (default is `CMD+SHIFT+V`).
 
-### 3. Run Claude or Codex on your remote and paste file!
+### 3. On the remote, run Claude or Codex and paste a file
 ```sh
 tmux new -s agent
 codex
 ```
 **Paste:** Press `CMD+SHIFT+V` (or your configured shortcut)
-or
+&nbsp;&nbsp;&nbsp;or
 **Drag & drop**
+
 → The file will be pasted as if being on your host!
 
 ## Want it as always-on background service?
