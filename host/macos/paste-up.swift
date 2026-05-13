@@ -11,8 +11,15 @@ struct DaemonConfig {
     let command: String
     let host: String
     let sshCommand: String?
+    let shortcut: Shortcut
     let hijackPaste: Bool
     let allowlistedApps: Set<String>
+}
+
+struct Shortcut {
+    let display: String
+    let keyCode: UInt32
+    let carbonModifiers: UInt32
 }
 
 var config: DaemonConfig!
@@ -157,6 +164,86 @@ func fourCharCode(_ value: String) -> OSType {
     return result
 }
 
+func keyCode(for key: String) -> UInt32? {
+    switch key.uppercased() {
+    case "A": return UInt32(kVK_ANSI_A)
+    case "B": return UInt32(kVK_ANSI_B)
+    case "C": return UInt32(kVK_ANSI_C)
+    case "D": return UInt32(kVK_ANSI_D)
+    case "E": return UInt32(kVK_ANSI_E)
+    case "F": return UInt32(kVK_ANSI_F)
+    case "G": return UInt32(kVK_ANSI_G)
+    case "H": return UInt32(kVK_ANSI_H)
+    case "I": return UInt32(kVK_ANSI_I)
+    case "J": return UInt32(kVK_ANSI_J)
+    case "K": return UInt32(kVK_ANSI_K)
+    case "L": return UInt32(kVK_ANSI_L)
+    case "M": return UInt32(kVK_ANSI_M)
+    case "N": return UInt32(kVK_ANSI_N)
+    case "O": return UInt32(kVK_ANSI_O)
+    case "P": return UInt32(kVK_ANSI_P)
+    case "Q": return UInt32(kVK_ANSI_Q)
+    case "R": return UInt32(kVK_ANSI_R)
+    case "S": return UInt32(kVK_ANSI_S)
+    case "T": return UInt32(kVK_ANSI_T)
+    case "U": return UInt32(kVK_ANSI_U)
+    case "V": return UInt32(kVK_ANSI_V)
+    case "W": return UInt32(kVK_ANSI_W)
+    case "X": return UInt32(kVK_ANSI_X)
+    case "Y": return UInt32(kVK_ANSI_Y)
+    case "Z": return UInt32(kVK_ANSI_Z)
+    case "0": return UInt32(kVK_ANSI_0)
+    case "1": return UInt32(kVK_ANSI_1)
+    case "2": return UInt32(kVK_ANSI_2)
+    case "3": return UInt32(kVK_ANSI_3)
+    case "4": return UInt32(kVK_ANSI_4)
+    case "5": return UInt32(kVK_ANSI_5)
+    case "6": return UInt32(kVK_ANSI_6)
+    case "7": return UInt32(kVK_ANSI_7)
+    case "8": return UInt32(kVK_ANSI_8)
+    case "9": return UInt32(kVK_ANSI_9)
+    case "SPACE": return UInt32(kVK_Space)
+    case "TAB": return UInt32(kVK_Tab)
+    case "RETURN", "ENTER": return UInt32(kVK_Return)
+    case "ESC", "ESCAPE": return UInt32(kVK_Escape)
+    default: return nil
+    }
+}
+
+func parseShortcut(_ value: String) -> Shortcut? {
+    let rawParts = value.split(separator: "+").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    guard rawParts.count >= 2, let key = rawParts.last, let keyCode = keyCode(for: key) else {
+        return nil
+    }
+
+    var carbonModifiers: UInt32 = 0
+    var displayParts: [String] = []
+    for part in rawParts.dropLast() {
+        switch part.lowercased() {
+        case "cmd", "command":
+            carbonModifiers |= UInt32(cmdKey)
+            displayParts.append("Cmd")
+        case "shift":
+            carbonModifiers |= UInt32(shiftKey)
+            displayParts.append("Shift")
+        case "option", "opt", "alt":
+            carbonModifiers |= UInt32(optionKey)
+            displayParts.append("Option")
+        case "ctrl", "control":
+            carbonModifiers |= UInt32(controlKey)
+            displayParts.append("Ctrl")
+        default:
+            return nil
+        }
+    }
+    guard carbonModifiers != 0 else {
+        return nil
+    }
+
+    displayParts.append(key.uppercased())
+    return Shortcut(display: displayParts.joined(separator: "+"), keyCode: keyCode, carbonModifiers: carbonModifiers)
+}
+
 let hotKeyCallback: EventHandlerUPP = { _, event, _ in
     var hotKeyID = EventHotKeyID()
     let status = GetEventParameter(
@@ -171,13 +258,13 @@ let hotKeyCallback: EventHandlerUPP = { _, event, _ in
     if status == noErr && hotKeyID.id == 1 {
         if clipboardHasSupportedPayload() {
             guard beginPasteOperation() else {
-                log("Cmd+Shift+V duplicate ignored; paste is already running.")
+                log("\(config.shortcut.display) duplicate ignored; paste is already running.")
                 return noErr
             }
-            log("Cmd+Shift+V detected; asking remote tmux for the focused pane.")
+            log("\(config.shortcut.display) detected; asking remote tmux for the focused pane.")
             runPasteCommand()
         } else {
-            log("Cmd+Shift+V detected, but the clipboard has no supported payload.")
+            log("\(config.shortcut.display) detected, but the clipboard has no supported payload.")
         }
     }
     return noErr
@@ -204,15 +291,15 @@ func installDedicatedShortcut() {
     var hotKeyRef: EventHotKeyRef?
     let hotKeyID = EventHotKeyID(signature: fourCharCode("SBP1"), id: 1)
     let registerStatus = RegisterEventHotKey(
-        UInt32(kVK_ANSI_V),
-        UInt32(cmdKey | shiftKey),
+        config.shortcut.keyCode,
+        config.shortcut.carbonModifiers,
         hotKeyID,
         GetApplicationEventTarget(),
         0,
         &hotKeyRef
     )
     guard registerStatus == noErr else {
-        fputs("Could not register Cmd+Shift+V hotkey: \(registerStatus)\n", stderr)
+        fputs("Could not register \(config.shortcut.display) hotkey: \(registerStatus)\n", stderr)
         exit(1)
     }
 }
@@ -257,8 +344,13 @@ guard let command = valueAfter("--command") else {
 
 let host = valueAfter("--host") ?? "example-remote"
 let sshCommand = valueAfter("--ssh")
+let shortcutText = valueAfter("--shortcut") ?? "Cmd+Shift+V"
+guard let shortcut = parseShortcut(shortcutText) else {
+    fputs("Invalid paste shortcut: \(shortcutText)\n", stderr)
+    exit(2)
+}
 let apps = Set((valueAfter("--allowlisted-apps") ?? "").split(separator: ",").map(String.init))
-config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
+config = DaemonConfig(command: command, host: host, sshCommand: sshCommand, shortcut: shortcut, hijackPaste: flagPresent("--hijack-paste"), allowlistedApps: apps)
 
 if !AXIsProcessTrusted() {
     print("warning: Accessibility permission is not granted. macOS may block sending Ctrl+] into the focused SSH terminal.")
@@ -268,6 +360,6 @@ installDedicatedShortcut()
 if config.hijackPaste {
     installPasteHijackTap()
 }
-print("ssh-bin-paste up running. Cmd+Shift+V sends your clipboard payload to the focused tmux pane on the remote server.")
+print("ssh-bin-paste up running. \(config.shortcut.display) sends your clipboard payload to the focused tmux pane on the remote server.")
 fflush(stdout)
 _ = carbonRunApplicationEventLoop()

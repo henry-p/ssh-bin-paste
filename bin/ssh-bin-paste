@@ -11,6 +11,7 @@ ASSET_DIR="${SSH_BIN_PASTE_ASSET_DIR:-$HOME/.local/share/ssh-bin-paste}"
 REMOTE_HELPER_ASSET="$ASSET_DIR/ssh-bin-paste-remote.sh"
 CLIPBOARD_HELPER="$ASSET_DIR/clipboard-capture.swift"
 PASTE_UP="$ASSET_DIR/paste-up.swift"
+SHORTCUT_RECORDER="$ASSET_DIR/shortcut-recorder.swift"
 
 HOST="example-remote"
 SSH_COMMAND=""
@@ -22,6 +23,7 @@ CLEANUP_ENABLED="1"
 CLEANUP_MAX_AGE_SECONDS="86400"
 CLEANUP_INTERVAL_SECONDS="300"
 HIJACK_PASTE="0"
+PASTE_SHORTCUT="Cmd+Shift+V"
 REQUEST_AFTER=""
 REQUEST_TOKEN=""
 
@@ -61,6 +63,7 @@ save_config() {
     write_config_value CLEANUP_MAX_AGE_SECONDS "$CLEANUP_MAX_AGE_SECONDS"
     write_config_value CLEANUP_INTERVAL_SECONDS "$CLEANUP_INTERVAL_SECONDS"
     write_config_value HIJACK_PASTE "$HIJACK_PASTE"
+    write_config_value PASTE_SHORTCUT "$PASTE_SHORTCUT"
   } > "$CONFIG_FILE"
 }
 
@@ -89,6 +92,41 @@ validate_ssh_command() {
   case "$1" in ssh\ *|*/ssh\ *) return 0 ;; *) return 1 ;; esac
 }
 
+validate_shortcut() {
+  case "$1" in
+    *+?*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+prompt_paste_shortcut() {
+  local default="$1" answer recorded
+  while true; do
+    printf 'Paste command [%s] (Enter to keep, type "record" to capture): ' "$default" >/dev/tty
+    IFS= read -r answer </dev/tty
+    answer="${answer:-$default}"
+    case "$answer" in
+      record|r)
+        if [ ! -f "$SHORTCUT_RECORDER" ]; then
+          printf 'missing asset: %s\n' "$SHORTCUT_RECORDER" >/dev/tty
+          continue
+        fi
+        if recorded="$(swift "$SHORTCUT_RECORDER" --default "$default" </dev/tty)"; then
+          answer="$recorded"
+        else
+          printf 'Shortcut recording canceled.\n' >/dev/tty
+          continue
+        fi
+        ;;
+    esac
+    if validate_shortcut "$answer"; then
+      printf '%s\n' "$answer"
+      return 0
+    fi
+    printf 'Paste command must look like Cmd+Shift+V.\n' >/dev/tty
+  done
+}
+
 run_config_wizard() {
   load_config
   mkdir -p "$CONFIG_DIR"
@@ -99,6 +137,7 @@ run_config_wizard() {
     if validate_ssh_command "$SSH_COMMAND"; then break; fi
     printf 'SSH command must start with ssh.\n' >/dev/tty
   done
+  PASTE_SHORTCUT="$(prompt_paste_shortcut "${PASTE_SHORTCUT:-Cmd+Shift+V}")"
 
   AGENT_CODEX_COMMAND="codex"
   AGENT_CLAUDE_COMMAND="claude"
@@ -425,6 +464,7 @@ cmd_up() {
   [ -f "$PASTE_UP" ] || { printf 'missing asset: %s\n' "$PASTE_UP" >&2; exit 1; }
   local args=("$PASTE_UP" --command "$(command -v ssh-bin-paste || printf '%s' "$0")")
   if [ -n "$SSH_COMMAND" ]; then args+=(--ssh "$SSH_COMMAND"); else args+=(--host "$HOST"); fi
+  args+=(--shortcut "$PASTE_SHORTCUT")
   [ "$HIJACK_PASTE" = "1" ] && args+=(--hijack-paste)
 
   local child_pid=""
