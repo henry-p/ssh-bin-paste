@@ -18,7 +18,6 @@ struct DaemonConfig {
 var config: DaemonConfig!
 let pasteStateQueue = DispatchQueue(label: "ssh-bin-paste.state")
 var pasteInFlight = false
-var lastPasteStartedAt = Date(timeIntervalSince1970: 0)
 
 func valueAfter(_ name: String) -> String? {
     let args = CommandLine.arguments
@@ -56,12 +55,10 @@ func log(_ message: String) {
 
 func beginPasteOperation() -> Bool {
     pasteStateQueue.sync {
-        let now = Date()
-        if pasteInFlight || now.timeIntervalSince(lastPasteStartedAt) < 1.5 {
+        if pasteInFlight {
             return false
         }
         pasteInFlight = true
-        lastPasteStartedAt = now
         return true
     }
 }
@@ -95,9 +92,6 @@ func sendRemotePasteSignal() {
 func runPasteCommand() {
     sendRemotePasteSignal()
     DispatchQueue.global(qos: .userInitiated).async {
-        defer {
-            finishPasteOperation()
-        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         if let sshCommand = config.sshCommand {
@@ -107,10 +101,13 @@ func runPasteCommand() {
         }
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError
+        process.terminationHandler = { _ in
+            finishPasteOperation()
+        }
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
+            finishPasteOperation()
             fputs("failed to run paste command: \(error.localizedDescription)\n", stderr)
         }
     }
