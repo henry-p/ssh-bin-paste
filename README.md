@@ -27,8 +27,8 @@ On first run, you will be asked to enter the ssh command you use to connect to y
 tmux new -s agent
 codex
 ```
-**Paste:** Press `CMD+SHIFT+V` (or your configured shortcut)
-&nbsp;&nbsp;&nbsp;or
+**Paste:** Press `CMD+SHIFT+V` (or your configured shortcut)\
+&nbsp;&nbsp;&nbsp;or\
 **Drag & drop**
 
 → The file will be pasted as if being on your host!
